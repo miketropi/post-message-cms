@@ -1,8 +1,21 @@
 "use client";
 
-import { ChevronRight, Loader2, Send, Trash2 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  ChevronRight,
+  Hash,
+  Loader2,
+  Lock,
+  MapPin,
+  Radio,
+  Send,
+  Trash2,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { cn } from "@/lib/cn";
 import {
@@ -13,12 +26,15 @@ import {
 
 import {
   alertError,
+  bodyText,
   btnDangerGhost,
   btnPrimary,
+  calloutBox,
   cardSection,
   emptyStateDashed,
   fieldInput,
   fieldLabel,
+  linkInline,
   listItemCard,
   sectionIntro,
   sectionTitle,
@@ -39,6 +55,43 @@ export type DestinationRow = {
 };
 
 type ProviderChoice = "slack" | "discord" | "telegram";
+
+type WizardStepId = "provider" | "workspace" | "basics" | "credentials";
+
+const PROVIDER_UI: Record<
+  ProviderChoice,
+  { title: string; subtitle: string; hint: string; Icon: LucideIcon }
+> = {
+  slack: {
+    title: "Slack",
+    subtitle: "Incoming Webhook",
+    hint: "Webhook URL from your Slack app.",
+    Icon: Hash,
+  },
+  discord: {
+    title: "Discord",
+    subtitle: "Bot message",
+    hint: "Bot token and channel ID.",
+    Icon: Radio,
+  },
+  telegram: {
+    title: "Telegram",
+    subtitle: "Bot API",
+    hint: "Bot token and chat_id.",
+    Icon: Send,
+  },
+};
+
+const choiceCardCommon =
+  "flex w-full gap-3 rounded-xl border border-zinc-200 bg-zinc-50/60 p-4 text-left transition-colors duration-200 dark:border-zinc-700 dark:bg-zinc-950/50 md:p-5";
+const choiceProviderLayout = "flex-col items-start";
+const choiceWorkspaceLayout = "flex-row items-center";
+const choiceCardInactive =
+  "hover:border-zinc-300 hover:bg-zinc-50 dark:hover:border-zinc-600 dark:hover:bg-zinc-900/60";
+const choiceCardSelected =
+  "border-primary/50 bg-primary/10 ring-1 ring-inset ring-primary/20 dark:border-primary/40 dark:bg-primary/10";
+const choiceIconWrap =
+  "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-zinc-900 dark:text-primary";
 
 function formatProviderName(provider: string): string {
   switch (provider) {
@@ -71,10 +124,63 @@ export function DestinationsPanel({
   const [branchKey, setBranchKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [wizardStepIndex, setWizardStepIndex] = useState(0);
+  const [stepError, setStepError] = useState<string | null>(null);
 
-  async function addDestination(e: React.FormEvent) {
-    e.preventDefault();
+  const stepSequence = useMemo((): WizardStepId[] => {
+    const s: WizardStepId[] = ["provider"];
+    if (workspaces.length > 1) s.push("workspace");
+    s.push("basics", "credentials");
+    return s;
+  }, [workspaces.length]);
+
+  const currentStepId = stepSequence[wizardStepIndex] ?? "provider";
+  const isLastStep = wizardStepIndex >= stepSequence.length - 1;
+  const progressFraction =
+    stepSequence.length > 1
+      ? wizardStepIndex / (stepSequence.length - 1)
+      : 1;
+
+  function goBack() {
     setError(null);
+    setStepError(null);
+    setWizardStepIndex((i) => Math.max(0, i - 1));
+  }
+
+  function goNext() {
+    setError(null);
+    setStepError(null);
+    if (currentStepId === "basics") {
+      if (!label.trim()) {
+        setStepError(
+          "Add a label so you can tell this destination apart in your list.",
+        );
+        return;
+      }
+    }
+    if (wizardStepIndex < stepSequence.length - 1) {
+      setWizardStepIndex((i) => i + 1);
+    }
+  }
+
+  function credentialsFilled(): boolean {
+    if (providerKind === "slack") return webhookUrl.trim().length > 0;
+    if (providerKind === "discord") {
+      return (
+        botToken.trim().length > 0 && discordChannelId.trim().length > 0
+      );
+    }
+    return botToken.trim().length > 0 && telegramChatId.trim().length > 0;
+  }
+
+  async function addDestination(e?: React.FormEvent) {
+    e?.preventDefault();
+    setError(null);
+    setStepError(null);
+    if (!credentialsFilled()) {
+      setError("Fill in the connection fields before saving.");
+      return;
+    }
     setBusy(true);
     try {
       let provider: string;
@@ -119,6 +225,7 @@ export function DestinationsPanel({
       setDiscordChannelId("");
       setTelegramChatId("");
       setBranchKey("");
+      setWizardStepIndex(0);
       router.refresh();
     } finally {
       setBusy(false);
@@ -150,218 +257,376 @@ export function DestinationsPanel({
   return (
     <div className="space-y-8 md:space-y-10">
       <section className={cardSection}>
-        <h2 className={sectionTitle}>Add destination</h2>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+          Add destination · Step {wizardStepIndex + 1} of {stepSequence.length}
+        </p>
+        <h2 className={cn(sectionTitle, "mt-2")}>New destination</h2>
         <p className={sectionIntro}>
-          Slack (webhook), Discord (bot + channel), or Telegram (bot + chat).
-          Optional <strong className="font-medium text-zinc-800 dark:text-zinc-200">branch key</strong>{" "}
-          routes{" "}
+          Channel, workspace (if you have several), name, then credentials.
+          Optional branch keys route{" "}
           <code className="rounded-md bg-zinc-100 px-1.5 py-0.5 font-mono text-xs dark:bg-zinc-800">
             POST /api/v1/messages
           </code>{" "}
-          to this destination only. Leave blank for default fan-out. Secrets are
-          encrypted with{" "}
-          <code className="rounded-md bg-zinc-100 px-1.5 py-0.5 font-mono text-xs dark:bg-zinc-800">
-            AUTH_SECRET
-          </code>
-          .
+          to this row only.
         </p>
-        <form
-          onSubmit={addDestination}
-          className="mt-5 flex max-w-lg flex-col gap-4"
+
+        <div
+          className="mt-5 h-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800"
+          role="progressbar"
+          aria-valuenow={wizardStepIndex + 1}
+          aria-valuemin={1}
+          aria-valuemax={stepSequence.length}
+          aria-label="Add destination progress"
         >
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out motion-reduce:transition-none"
+            style={{
+              width: `${Math.round(progressFraction * 100)}%`,
+            }}
+          />
+        </div>
+
+        <div className="mt-6 flex flex-col gap-6">
           {error ? (
             <p className={alertError} role="alert">
               {error}
             </p>
           ) : null}
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className={fieldLabel}>Provider</span>
-            <select
-              value={providerKind}
-              onChange={(e) =>
-                setProviderKind(e.target.value as ProviderChoice)
-              }
-              className={fieldInput}
-            >
-              <option value="slack">Slack — Incoming Webhook</option>
-              <option value="discord">Discord — Bot (channel message)</option>
-              <option value="telegram">Telegram — Bot (sendMessage)</option>
-            </select>
-          </label>
-          {workspaces.length > 1 ? (
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className={fieldLabel}>Workspace</span>
-              <select
-                value={workspaceId}
-                onChange={(e) => setWorkspaceId(e.target.value)}
-                className={fieldInput}
-              >
-                {workspaces.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+          {stepError ? (
+            <p className={cn(alertError, "mb-4")} role="alert">
+              {stepError}
+            </p>
           ) : null}
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className={fieldLabel}>Label</span>
-            <input
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder={
-                providerKind === "slack"
-                  ? "e.g. #alerts"
-                  : providerKind === "discord"
-                    ? "e.g. #general"
-                    : "e.g. Ops group"
-              }
-              required
-              className={fieldInput}
-            />
-          </label>
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className={fieldLabel}>Branch key (optional)</span>
-            <input
-              value={branchKey}
-              onChange={(e) => setBranchKey(e.target.value)}
-              placeholder="e.g. alerts — omit for default destinations"
-              autoComplete="off"
-              className={cn(fieldInput, "font-mono")}
-            />
-            <span className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-              API:{" "}
-              <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
-                {`{ "text": "…", "branch": "alerts" }`}
-              </code>{" "}
-              or{" "}
-              <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
-                ?branch=alerts
-              </code>
-              . Reuse the same key on multiple destinations.
-            </span>
-          </label>
-          {providerKind === "slack" ? (
-            <>
-              <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                Slack: App → Incoming Webhooks → add to channel. URL must start
-                with{" "}
-                <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
-                  https://hooks.slack.com/services/
-                </code>
-                .
-              </p>
+
+          {currentStepId === "provider" ? (
+            <div className="space-y-4">
+              <div>
+                <h3 className={sectionTitle}>Channel</h3>
+                <p className={sectionIntro}>
+                  Where messages are delivered. Add more destinations later from
+                  this page.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {(Object.keys(PROVIDER_UI) as ProviderChoice[]).map((key) => {
+                  const p = PROVIDER_UI[key];
+                  const selected = providerKind === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setProviderKind(key)}
+                      className={cn(
+                        choiceCardCommon,
+                        choiceProviderLayout,
+                        selected ? choiceCardSelected : choiceCardInactive,
+                      )}
+                    >
+                      <span className={choiceIconWrap}>
+                        <p.Icon className="h-5 w-5" strokeWidth={2} aria-hidden />
+                      </span>
+                      <span>
+                        <span className="block text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                          {p.title}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">
+                          {p.subtitle}
+                        </span>
+                        <span className="mt-1.5 block text-xs leading-snug text-zinc-600 dark:text-zinc-500">
+                          {p.hint}
+                        </span>
+                      </span>
+                      {selected ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-zinc-700 dark:text-primary">
+                          <Check className="h-3.5 w-3.5" aria-hidden />
+                          Selected
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {currentStepId === "workspace" ? (
+            <div className="space-y-4">
+              <div>
+                <h3 className={sectionTitle}>Workspace</h3>
+                <p className={sectionIntro}>
+                  Same workspace as the API key used for{" "}
+                  <code className="rounded bg-zinc-100 px-1 font-mono text-xs dark:bg-zinc-800">
+                    POST /api/v1/messages
+                  </code>
+                  .
+                </p>
+              </div>
+              <div className="space-y-2">
+                {workspaces.map((w) => {
+                  const selected = workspaceId === w.id;
+                  return (
+                    <button
+                      key={w.id}
+                      type="button"
+                      onClick={() => setWorkspaceId(w.id)}
+                      className={cn(
+                        choiceCardCommon,
+                        choiceWorkspaceLayout,
+                        selected ? choiceCardSelected : choiceCardInactive,
+                      )}
+                    >
+                      <span className={choiceIconWrap}>
+                        <MapPin className="h-5 w-5" aria-hidden />
+                      </span>
+                      <span className="min-w-0 flex-1 text-left">
+                        <span className="block text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                          {w.name}
+                        </span>
+                        <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                          API keys and destinations share this scope
+                        </span>
+                      </span>
+                      {selected ? (
+                        <Check
+                          className="h-4 w-4 shrink-0 text-zinc-900 dark:text-primary"
+                          strokeWidth={2.5}
+                          aria-hidden
+                        />
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {currentStepId === "basics" ? (
+            <div className="flex flex-col gap-4">
+              <div>
+                <h3 className={sectionTitle}>Label & branch</h3>
+                <p className={sectionIntro}>
+                  Label appears in the list below. Branch is optional API
+                  routing.
+                </p>
+              </div>
               <label className="flex flex-col gap-1.5 text-sm">
-                <span className={fieldLabel}>Webhook URL</span>
+                <span className={fieldLabel}>Label</span>
                 <input
-                  value={webhookUrl}
-                  onChange={(e) => setWebhookUrl(e.target.value)}
-                  type="url"
-                  placeholder="https://hooks.slack.com/services/…"
-                  required
+                  value={label}
+                  onChange={(e) => setLabel(e.target.value)}
+                  placeholder={
+                    providerKind === "slack"
+                      ? "e.g. #alerts"
+                      : providerKind === "discord"
+                        ? "e.g. #general"
+                        : "e.g. Ops broadcast"
+                  }
                   autoComplete="off"
                   className={fieldInput}
                 />
               </label>
-            </>
-          ) : providerKind === "discord" ? (
-            <>
-              <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                Discord:{" "}
-                <a
-                  href="https://discord.com/developers/applications"
-                  className="font-medium text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Developer Portal
-                </a>{" "}
-                → Bot → copy token. Invite the bot with{" "}
-                <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
-                  Send Messages
-                </code>
-                . Developer Mode → right‑click channel → Copy channel ID.
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className={fieldLabel}>Branch key (optional)</span>
+                <input
+                  value={branchKey}
+                  onChange={(e) => setBranchKey(e.target.value)}
+                  placeholder="e.g. alerts — leave empty for default fan-out"
+                  autoComplete="off"
+                  className={cn(fieldInput, "font-mono")}
+                />
+                <span className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                  JSON{" "}
+                  <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
+                    branch
+                  </code>{" "}
+                  or query{" "}
+                  <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
+                    ?branch=
+                  </code>
+                  . Reuse the same key on multiple rows.
+                </span>
+              </label>
+            </div>
+          ) : null}
+
+          {currentStepId === "credentials" ? (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-wrap items-start gap-3">
+                <span className={choiceIconWrap}>
+                  <Lock className="h-5 w-5" aria-hidden />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h3 className={sectionTitle}>
+                    {PROVIDER_UI[providerKind].title} credentials
+                  </h3>
+                  <p className={sectionIntro}>
+                    Encrypted with{" "}
+                    <code className="rounded bg-zinc-100 px-1 font-mono text-xs dark:bg-zinc-800">
+                      AUTH_SECRET
+                    </code>{" "}
+                    before they are stored.
+                  </p>
+                </div>
+              </div>
+
+              {providerKind === "slack" ? (
+                <>
+                  <p className={bodyText}>
+                    Slack: Incoming Webhooks → add to channel. URL must start
+                    with{" "}
+                    <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
+                      https://hooks.slack.com/services/
+                    </code>
+                    .
+                  </p>
+                  <label className="flex flex-col gap-1.5 text-sm">
+                    <span className={fieldLabel}>Webhook URL</span>
+                    <input
+                      value={webhookUrl}
+                      onChange={(e) => setWebhookUrl(e.target.value)}
+                      type="url"
+                      placeholder="https://hooks.slack.com/services/…"
+                      autoComplete="off"
+                      className={fieldInput}
+                    />
+                  </label>
+                </>
+              ) : providerKind === "discord" ? (
+                <>
+                  <p className={bodyText}>
+                    <a
+                      href="https://discord.com/developers/applications"
+                      className={linkInline}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Developer Portal
+                    </a>{" "}
+                    → Bot → token. Invite with{" "}
+                    <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
+                      Send Messages
+                    </code>
+                    . Developer Mode → copy channel ID.
+                  </p>
+                  <label className="flex flex-col gap-1.5 text-sm">
+                    <span className={fieldLabel}>Bot token</span>
+                    <input
+                      value={botToken}
+                      onChange={(e) => setBotToken(e.target.value)}
+                      type="password"
+                      autoComplete="off"
+                      placeholder="Discord bot token"
+                      className={cn(fieldInput, "font-mono")}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-sm">
+                    <span className={fieldLabel}>Channel ID</span>
+                    <input
+                      value={discordChannelId}
+                      onChange={(e) => setDiscordChannelId(e.target.value)}
+                      inputMode="numeric"
+                      placeholder="e.g. 1234567890123456789"
+                      autoComplete="off"
+                      className={cn(fieldInput, "font-mono")}
+                    />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <p className={bodyText}>
+                    <a
+                      href="https://t.me/BotFather"
+                      className={linkInline}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      @BotFather
+                    </a>{" "}
+                    →{" "}
+                    <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
+                      /newbot
+                    </code>
+                    . Use{" "}
+                    <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
+                      getUpdates
+                    </code>{" "}
+                    or @userinfobot for{" "}
+                    <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
+                      chat_id
+                    </code>
+                    .
+                  </p>
+                  <label className="flex flex-col gap-1.5 text-sm">
+                    <span className={fieldLabel}>Bot token</span>
+                    <input
+                      value={botToken}
+                      onChange={(e) => setBotToken(e.target.value)}
+                      type="password"
+                      autoComplete="off"
+                      placeholder="123456789:AA… from BotFather"
+                      className={cn(fieldInput, "font-mono")}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-sm">
+                    <span className={fieldLabel}>Chat ID</span>
+                    <input
+                      value={telegramChatId}
+                      onChange={(e) => setTelegramChatId(e.target.value)}
+                      placeholder="e.g. -1001234567890 or @mychannel"
+                      autoComplete="off"
+                      className={cn(fieldInput, "font-mono")}
+                    />
+                  </label>
+                </>
+              )}
+
+              <p className={cn(calloutBox, "!mt-0")}>
+                After saving, use <strong className="font-medium">Test send</strong>{" "}
+                on the row below to verify without affecting other channels.
               </p>
-              <label className="flex flex-col gap-1.5 text-sm">
-                <span className={fieldLabel}>Bot token</span>
-                <input
-                  value={botToken}
-                  onChange={(e) => setBotToken(e.target.value)}
-                  type="password"
-                  autoComplete="off"
-                  placeholder="Discord bot token"
-                  required
-                  className={cn(fieldInput, "font-mono")}
-                />
-              </label>
-              <label className="flex flex-col gap-1.5 text-sm">
-                <span className={fieldLabel}>Channel ID</span>
-                <input
-                  value={discordChannelId}
-                  onChange={(e) => setDiscordChannelId(e.target.value)}
-                  inputMode="numeric"
-                  placeholder="e.g. 1234567890123456789"
-                  required
-                  autoComplete="off"
-                  className={cn(fieldInput, "font-mono")}
-                />
-              </label>
-            </>
-          ) : (
-            <>
-              <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                Telegram:{" "}
-                <a
-                  href="https://t.me/BotFather"
-                  className="font-medium text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  @BotFather
-                </a>{" "}
-                →{" "}
-                <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
-                  /newbot
-                </code>{" "}
-                → copy the token. Use{" "}
-                <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
-                  getUpdates
-                </code>{" "}
-                or @userinfobot for{" "}
-                <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
-                  chat_id
-                </code>
-                .
-              </p>
-              <label className="flex flex-col gap-1.5 text-sm">
-                <span className={fieldLabel}>Bot token</span>
-                <input
-                  value={botToken}
-                  onChange={(e) => setBotToken(e.target.value)}
-                  type="password"
-                  autoComplete="off"
-                  placeholder="123456789:AA… from BotFather"
-                  required
-                  className={cn(fieldInput, "font-mono")}
-                />
-              </label>
-              <label className="flex flex-col gap-1.5 text-sm">
-                <span className={fieldLabel}>Chat ID</span>
-                <input
-                  value={telegramChatId}
-                  onChange={(e) => setTelegramChatId(e.target.value)}
-                  placeholder="e.g. -1001234567890 or @mychannel"
-                  required
-                  autoComplete="off"
-                  className={cn(fieldInput, "font-mono")}
-                />
-              </label>
-            </>
-          )}
-          <button type="submit" disabled={busy} className={cn(btnPrimary, "w-fit")}>
-            {busy ? "Saving…" : "Save destination"}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 pt-5 dark:border-zinc-800">
+          <button
+            type="button"
+            onClick={goBack}
+            disabled={wizardStepIndex === 0 || busy}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors",
+              "hover:bg-zinc-50 disabled:pointer-events-none disabled:opacity-45",
+              "dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800",
+            )}
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            Back
           </button>
-        </form>
+          {!isLastStep ? (
+            <button
+              type="button"
+              onClick={goNext}
+              className={btnPrimary}
+            >
+              Continue
+              <ArrowRight className="h-4 w-4" aria-hidden />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void addDestination()}
+              disabled={busy}
+              className={btnPrimary}
+            >
+              {busy ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Check className="h-4 w-4" aria-hidden />
+              )}
+              {busy ? "Saving…" : "Save destination"}
+            </button>
+          )}
+        </div>
       </section>
 
       <section className={cardSection}>
@@ -373,8 +638,8 @@ export function DestinationsPanel({
         {initialDestinations.length === 0 ? (
           <div className={cn("mt-5", emptyStateDashed)}>
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              No destinations yet. Add one above — messages are not forwarded
-              until you do.
+              No destinations yet. Complete the steps above — messages are not
+              forwarded until you do.
             </p>
           </div>
         ) : (

@@ -15,6 +15,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Post Message CMS",
   description: "Bridge API messages to Slack, Discord, and Telegram.",
+  icons: {
+    icon: [{ url: "/icon.png", type: "image/png" }], 
+    apple: [{ url: "/icon.png", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({

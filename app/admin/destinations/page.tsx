@@ -54,36 +54,37 @@ export default async function AdminDestinationsPage() {
     <div>
       <h1 className={adminPageTitle}>Destinations</h1>
       <p className={adminPageIntro}>
+        Add destinations in a short guided flow: pick{" "}
         <strong className="font-medium text-zinc-800 dark:text-zinc-200">
           Slack
         </strong>{" "}
-        uses{" "}
+        (
         <a
           href="https://api.slack.com/messaging/webhooks"
           className={linkInline}
           target="_blank"
           rel="noopener noreferrer"
         >
-          Incoming Webhooks
+          webhooks
         </a>
-        .{" "}
+        ),{" "}
         <strong className="font-medium text-zinc-800 dark:text-zinc-200">
           Discord
         </strong>{" "}
-        uses a bot token and channel ID (
+        (bot +{" "}
         <a
           href="https://discord.com/developers/docs/resources/channel#create-message"
           className={linkInline}
           target="_blank"
           rel="noopener noreferrer"
         >
-          Create Message
+          channel
         </a>
-        ).{" "}
+        ), or{" "}
         <strong className="font-medium text-zinc-800 dark:text-zinc-200">
           Telegram
         </strong>{" "}
-        uses a bot token from{" "}
+        (
         <a
           href="https://t.me/BotFather"
           className={linkInline}
@@ -92,7 +93,7 @@ export default async function AdminDestinationsPage() {
         >
           @BotFather
         </a>{" "}
-        and a{" "}
+        +{" "}
         <a
           href="https://core.telegram.org/bots/api#sendmessage"
           className={linkInline}
@@ -100,8 +101,8 @@ export default async function AdminDestinationsPage() {
           rel="noopener noreferrer"
         >
           chat_id
-        </a>{" "}
-        (numeric or @channel). Use the same workspace as your API key for{" "}
+        </a>
+        ). Match the workspace your API key uses for{" "}
         <code className="rounded bg-zinc-200 px-1 py-0.5 text-sm dark:bg-zinc-800">
           POST /api/v1/messages
         </code>

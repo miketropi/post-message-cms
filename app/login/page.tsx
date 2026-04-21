@@ -42,6 +42,14 @@ export default function LoginPage() {
               className="rounded-md border border-zinc-300 px-3 py-2 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-950 dark:text-zinc-50"
             />
           </label>
+          <p className="text-right text-sm">
+            <Link
+              href="/forgot-password"
+              className="font-medium text-blue-600 underline dark:text-blue-400"
+            >
+              Forgot password?
+            </Link>
+          </p>
           <button
             type="submit"
             disabled={pending}

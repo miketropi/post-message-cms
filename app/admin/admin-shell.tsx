@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -8,7 +9,6 @@ import {
   KeyRound,
   LayoutDashboard,
   Menu,
-  Send,
   Share2,
   X,
 } from "lucide-react";
@@ -53,9 +53,13 @@ const navItems = [
 
 export function AdminShell({
   userEmail,
+  userDisplayName,
+  userAvatarUrl,
   children,
 }: {
   userEmail: string;
+  userDisplayName: string;
+  userAvatarUrl: string;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -101,10 +105,16 @@ export function AdminShell({
             onClick={() => setMobileNavOpen(false)}
           >
             <span
-              className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-transform duration-200 group-hover:scale-105"
+              className="relative flex h-9 w-9 shrink-0 overflow-hidden rounded-lg ring-1 ring-white/15 transition-transform duration-200 group-hover:scale-105"
               aria-hidden
             >
-              <Send className="h-4 w-4" strokeWidth={2.25} />
+              <Image
+                src="/icon.png"
+                alt=""
+                width={36}
+                height={36}
+                className="h-full w-full object-cover"
+              />
             </span>
             <div className="leading-tight">
               <span className="block text-sm font-semibold tracking-tight text-white">
@@ -142,7 +152,7 @@ export function AdminShell({
                       className={cn(
                         "flex gap-3 rounded-xl px-3 py-3 transition-all duration-200 ease-out",
                         active
-                          ? "bg-primary/14 text-primary shadow-[inset_3px_0_0_0_var(--color-primary)]"
+                          ? "bg-primary/14 text-primary"
                           : "text-zinc-400 hover:bg-zinc-900/80 hover:text-zinc-100",
                       )}
                     >
@@ -176,15 +186,38 @@ export function AdminShell({
         </nav>
 
         <div className="shrink-0 border-t border-zinc-800/80 p-4 md:p-5">
-          <p className="truncate text-xs text-zinc-500" title={userEmail}>
-            Signed in as
-          </p>
-          <p
-            className="mt-0.5 truncate text-sm font-medium text-zinc-200"
-            title={userEmail}
+          <Link
+            href="/admin/account"
+            onClick={() => setMobileNavOpen(false)}
+            className={cn(
+              "flex gap-3 rounded-xl px-2 py-2 transition-colors duration-200",
+              "hover:bg-zinc-900/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+            )}
+            aria-label="Account — profile and password"
           >
-            {userEmail}
-          </p>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={userAvatarUrl}
+              alt=""
+              width={40}
+              height={40}
+              className="h-10 w-10 shrink-0 rounded-xl border border-zinc-700 bg-zinc-800 object-cover"
+            />
+            <div className="min-w-0 flex-1">
+              <p
+                className="truncate text-sm font-medium text-zinc-200"
+                title={userDisplayName}
+              >
+                {userDisplayName}
+              </p>
+              <p
+                className="truncate text-xs text-zinc-500"
+                title={userEmail}
+              >
+                {userEmail}
+              </p>
+            </div>
+          </Link>
           <form action={logoutAction} className="mt-3">
             <button
               type="submit"

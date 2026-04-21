@@ -4,6 +4,7 @@ import {
   BookOpen,
   CheckCircle2,
   Circle,
+  CircleUser,
   KeyRound,
   Radio,
   Share2,
@@ -59,7 +60,7 @@ export default async function AdminHomePage() {
   const [user, baseUrl] = await Promise.all([
     prisma.user.findUnique({
       where: { id: session.userId },
-      select: { email: true },
+      select: { email: true, firstName: true, lastName: true },
     }),
     getRequestBaseUrl(),
   ]);
@@ -143,9 +144,12 @@ export default async function AdminHomePage() {
   ];
   const completedSteps = steps.filter((s) => s.done).length;
 
-  const greetingName = user.email.includes("@")
-    ? user.email.split("@")[0]
-    : user.email;
+  const f = user.firstName?.trim() ?? "";
+  const l = user.lastName?.trim() ?? "";
+  const greetingName =
+    f && l
+      ? `${f} ${l}`
+      : f || l || (user.email.includes("@") ? user.email.split("@")[0]! : user.email);
 
   return (
     <div className="space-y-8 md:space-y-10">
@@ -307,6 +311,12 @@ export default async function AdminHomePage() {
                 title="Destinations"
                 description="Webhooks, bots, branch keys"
                 icon={Share2}
+              />
+              <ActionCard
+                href="/admin/account"
+                title="Account"
+                description="Profile, password, Gravatar"
+                icon={CircleUser}
               />
               <ActionCard
                 href="/admin/api-keys"
