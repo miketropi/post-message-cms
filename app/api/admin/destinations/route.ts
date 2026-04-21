@@ -21,6 +21,7 @@ import {
   assertSlackIncomingWebhookUrl,
   slackWebhookPublicMeta,
 } from "@/lib/providers/slack/validate";
+import { normalizeBranchKeyInput } from "@/lib/messages/routing";
 import { prisma } from "@/lib/prisma";
 import { encryptString } from "@/lib/secrets";
 
@@ -47,6 +48,7 @@ export async function GET() {
       provider: true,
       label: true,
       publicMeta: true,
+      branchKey: true,
       enabled: true,
       createdAt: true,
       updatedAt: true,
@@ -76,6 +78,7 @@ export async function POST(request: Request) {
     botToken?: string;
     channelId?: string;
     chatId?: string;
+    branchKey?: string;
   } = {};
   try {
     const t = await request.text();
@@ -101,6 +104,14 @@ export async function POST(request: Request) {
       { error: "Workspace not found or not allowed." },
       { status: 400 },
     );
+  }
+
+  let branchKey: string | null;
+  try {
+    branchKey = normalizeBranchKeyInput(body.branchKey);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Invalid branchKey.";
+    return NextResponse.json({ error: msg }, { status: 400 });
   }
 
   let secretEncrypted: string;
@@ -185,6 +196,7 @@ export async function POST(request: Request) {
       label,
       secretEncrypted,
       publicMeta,
+      branchKey,
     },
     select: {
       id: true,
@@ -192,6 +204,7 @@ export async function POST(request: Request) {
       provider: true,
       label: true,
       publicMeta: true,
+      branchKey: true,
       enabled: true,
       createdAt: true,
     },

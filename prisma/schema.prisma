@@ -47,11 +47,14 @@ model Destination {
   secretEncrypted String
   /// Non-sensitive hint for admin lists (e.g. hooks.slack.com)
   publicMeta      String?
+  /// Optional slug: API callers pass `branch` to deliver only here (omit = default destinations).
+  branchKey       String?
   enabled         Boolean   @default(true)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   @@index([workspaceId])
+  @@index([workspaceId, branchKey])
 }
 
 /// Programmatic access; raw key is shown only once at creation.

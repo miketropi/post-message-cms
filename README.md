@@ -6,7 +6,7 @@ HTTP API and admin UI to **forward messages into chat apps**. Supported destinat
 - **Discord** — [Create Message](https://discord.com/developers/docs/resources/channel#create-message) (bot token + channel ID)
 - **Telegram** — [sendMessage](https://core.telegram.org/bots/api#sendmessage) (bot token + `chat_id`)
 
-The same **`POST /api/v1/messages`** integration fans out to every enabled destination for the API key’s workspace. See **[PROJECT.md](./PROJECT.md)** for product scope and deeper architecture notes.
+The same **`POST /api/v1/messages`** integration delivers to **default** destinations (no branch key) for the API key’s workspace, or to destinations that match an optional **`branch`** (JSON body or query). See **[PROJECT.md](./PROJECT.md)** for product scope and deeper architecture notes.
 
 ## Stack
 
@@ -34,7 +34,7 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000).
 
 1. **Register** an admin account (creates a default workspace).
-2. **Admin → Destinations** — add **Slack**, **Discord**, and/or **Telegram** (see sections below).
+2. **Admin → Destinations** — add **Slack**, **Discord**, and/or **Telegram** (see sections below). Use an optional **branch key** per destination to route API calls to specific threads/channels; leave it empty for **default** destinations that receive unscoped messages.
 3. **Admin → API keys** — create a key (shown once).
 4. Send a message:
 
@@ -44,6 +44,17 @@ curl -sS -X POST http://localhost:3000/api/v1/messages \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{"text":"Hello from Post Message CMS"}'
 ```
+
+**Branch routing:** send only to destinations with that branch key (e.g. `alerts`):
+
+```bash
+curl -sS -X POST 'http://localhost:3000/api/v1/messages?branch=alerts' \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{"text":"Alerts only"}'
+```
+
+Or include `"branch":"alerts"` in the JSON body (body wins if both are set). The `branch` field is stripped before message text is computed, so it does not appear in the chat line.
 
 Optional: `X-Api-Key: YOUR_API_KEY` instead of `Authorization`. Optional header: `Idempotency-Key` (echoed in the JSON response; full deduplication not implemented yet).
 
@@ -80,20 +91,24 @@ JSON health check; includes a trivial database query when the app can connect.
 
 ### `POST /api/v1/messages`
 
-Authenticates with an API key, then delivers to **all enabled destinations** (Slack, Discord, Telegram) for that key’s workspace.
+Authenticates with an API key, then delivers to enabled destinations for that key’s workspace:
+
+- **No `branch`:** destinations with an **empty** branch key only (legacy / default fan-out).
+- **`branch` set** (JSON property and/or `?branch=` query): destinations whose **branch key** matches only. JSON `branch` takes precedence over the query string when both are present.
 
 **Request body:** JSON. The service maps common shapes to plain text (Slack `text`, Discord `content`, Telegram `text`):
 
 - `text` (string)
 - or `message` (string)
 - or `title` + `body` (strings, formatted with a title line)
-- otherwise a compact `JSON.stringify` of the body
+- optional `branch` (string, slug: letter/digit start, then letters, digits, `_`, `-`, max 63 chars)
+- otherwise a compact `JSON.stringify` of the body (routing keys like `branch` are omitted from this stringify path when other fields remain)
 
 Length limits when sending: **Discord** truncates to **2000** characters; **Telegram** to **4096**; Slack follows Incoming Webhook limits.
 
 **Responses:**
 
-- **200** — Delivery attempted; see `deliveries` (per destination `ok` / `error`). If there are no destinations, `deliveries` is empty and a `notice` explains that.
+- **200** — Delivery attempted; see `deliveries` (per destination `ok` / `error`). Response includes `branch` (`null` if default routing). If there are no matching destinations, `deliveries` is empty and a `notice` explains that.
 - **401 / 403** — Missing/invalid API key or missing `messages:write` scope.
 - **400** — Non-JSON body.
 - **502** — At least one destination was configured and **every** delivery failed (details in `deliveries`).
@@ -107,9 +122,12 @@ Session cookie required. JSON body examples:
 ```json
 {
   "label": "#alerts",
-  "webhookUrl": "https://hooks.slack.com/services/..."
+  "webhookUrl": "https://hooks.slack.com/services/...",
+  "branchKey": "alerts"
 }
 ```
+
+(`branchKey` optional; omit for a default destination.)
 
 **Discord:**
 
@@ -118,7 +136,8 @@ Session cookie required. JSON body examples:
   "provider": "discord_bot",
   "label": "Announcements",
   "botToken": "your.bot.token",
-  "channelId": "1234567890123456789"
+  "channelId": "1234567890123456789",
+  "branchKey": "announcements"
 }
 ```
 
@@ -129,7 +148,8 @@ Session cookie required. JSON body examples:
   "provider": "telegram_bot",
   "label": "Ops chat",
   "botToken": "123456789:AA...",
-  "chatId": "-1001234567890"
+  "chatId": "-1001234567890",
+  "branchKey": "ops"
 }
 ```
 

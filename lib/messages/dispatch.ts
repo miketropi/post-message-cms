@@ -29,9 +29,114 @@ export type DeliveryResult = {
   error?: string;
 };
 
+/** Row fields needed to deliver plain text (admin test send + fan-out). */
+export type DestinationDeliveryRow = {
+  id: string;
+  provider: string;
+  label: string;
+  secretEncrypted: string;
+};
+
+export async function deliverPlainTextToDestination(
+  d: DestinationDeliveryRow,
+  rawText: string,
+): Promise<DeliveryResult> {
+  const text =
+    rawText.trim().length > 0
+      ? rawText
+      : "_Post Message CMS: empty test message._";
+
+  let decrypted: string;
+  try {
+    decrypted = decryptString(d.secretEncrypted);
+  } catch {
+    return {
+      destinationId: d.id,
+      provider: d.provider,
+      label: d.label,
+      ok: false,
+      error: "Stored secret could not be decrypted (check AUTH_SECRET).",
+    };
+  }
+
+  if (d.provider === PROVIDER_SLACK_INCOMING_WEBHOOK) {
+    const sent = await postSlackIncomingWebhook(decrypted, text);
+    return {
+      destinationId: d.id,
+      provider: d.provider,
+      label: d.label,
+      ok: sent.ok,
+      error: sent.ok ? undefined : sent.error,
+    };
+  }
+
+  if (d.provider === PROVIDER_DISCORD_BOT) {
+    let creds: DiscordStoredSecret;
+    try {
+      creds = parseDiscordSecretJson(decrypted);
+    } catch {
+      return {
+        destinationId: d.id,
+        provider: d.provider,
+        label: d.label,
+        ok: false,
+        error: "Invalid stored Discord credentials.",
+      };
+    }
+    const sent = await postDiscordChannelMessage(
+      creds.botToken,
+      creds.channelId,
+      text,
+    );
+    return {
+      destinationId: d.id,
+      provider: d.provider,
+      label: d.label,
+      ok: sent.ok,
+      error: sent.ok ? undefined : sent.error,
+    };
+  }
+
+  if (d.provider === PROVIDER_TELEGRAM_BOT) {
+    let creds: TelegramStoredSecret;
+    try {
+      creds = parseTelegramSecretJson(decrypted);
+    } catch {
+      return {
+        destinationId: d.id,
+        provider: d.provider,
+        label: d.label,
+        ok: false,
+        error: "Invalid stored Telegram credentials.",
+      };
+    }
+    const sent = await postTelegramSendMessage(
+      creds.botToken,
+      creds.chatId,
+      text,
+    );
+    return {
+      destinationId: d.id,
+      provider: d.provider,
+      label: d.label,
+      ok: sent.ok,
+      error: sent.ok ? undefined : sent.error,
+    };
+  }
+
+  return {
+    destinationId: d.id,
+    provider: d.provider,
+    label: d.label,
+    ok: false,
+    error: `Unsupported provider: ${d.provider}`,
+  };
+}
+
 export async function dispatchIncomingMessage(
   workspaceId: string,
   body: unknown,
+  options?: { branch?: string },
 ): Promise<DeliveryResult[]> {
   const rawText = jsonBodyToPlainText(body);
   const text =
@@ -39,10 +144,12 @@ export async function dispatchIncomingMessage(
       ? rawText
       : "_Post Message CMS: empty body (no `text` / `message`)._";
 
+  const branch = options?.branch;
   const destinations = await prisma.destination.findMany({
     where: {
       workspaceId,
       enabled: true,
+      branchKey: branch != null ? branch : null,
       provider: {
         in: [
           PROVIDER_SLACK_INCOMING_WEBHOOK,
@@ -56,97 +163,17 @@ export async function dispatchIncomingMessage(
   const results: DeliveryResult[] = [];
 
   for (const d of destinations) {
-    let decrypted: string;
-    try {
-      decrypted = decryptString(d.secretEncrypted);
-    } catch {
-      results.push({
-        destinationId: d.id,
-        provider: d.provider,
-        label: d.label,
-        ok: false,
-        error: "Stored secret could not be decrypted (check AUTH_SECRET).",
-      });
-      continue;
-    }
-
-    if (d.provider === PROVIDER_SLACK_INCOMING_WEBHOOK) {
-      const sent = await postSlackIncomingWebhook(decrypted, text);
-      results.push({
-        destinationId: d.id,
-        provider: d.provider,
-        label: d.label,
-        ok: sent.ok,
-        error: sent.ok ? undefined : sent.error,
-      });
-      continue;
-    }
-
-    if (d.provider === PROVIDER_DISCORD_BOT) {
-      let creds: DiscordStoredSecret;
-      try {
-        creds = parseDiscordSecretJson(decrypted);
-      } catch {
-        results.push({
-          destinationId: d.id,
+    results.push(
+      await deliverPlainTextToDestination(
+        {
+          id: d.id,
           provider: d.provider,
           label: d.label,
-          ok: false,
-          error: "Invalid stored Discord credentials.",
-        });
-        continue;
-      }
-      const sent = await postDiscordChannelMessage(
-        creds.botToken,
-        creds.channelId,
+          secretEncrypted: d.secretEncrypted,
+        },
         text,
-      );
-      results.push({
-        destinationId: d.id,
-        provider: d.provider,
-        label: d.label,
-        ok: sent.ok,
-        error: sent.ok ? undefined : sent.error,
-      });
-      continue;
-    }
-
-    if (d.provider === PROVIDER_TELEGRAM_BOT) {
-      let creds: TelegramStoredSecret;
-      try {
-        creds = parseTelegramSecretJson(decrypted);
-      } catch {
-        results.push({
-          destinationId: d.id,
-          provider: d.provider,
-          label: d.label,
-          ok: false,
-          error: "Invalid stored Telegram credentials.",
-        });
-        continue;
-      }
-      const sent = await postTelegramSendMessage(
-        creds.botToken,
-        creds.chatId,
-        text,
-      );
-      results.push({
-        destinationId: d.id,
-        provider: d.provider,
-        label: d.label,
-        ok: sent.ok,
-        error: sent.ok ? undefined : sent.error,
-      });
-      continue;
-    }
-
-    results.push({
-      destinationId: d.id,
-      provider: d.provider,
-      label: d.label,
-      ok: false,
-      error: `Unsupported provider: ${d.provider}`,
-    });
+      ),
+    );
   }
 
   return results;

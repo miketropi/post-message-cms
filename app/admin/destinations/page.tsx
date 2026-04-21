@@ -3,6 +3,12 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 
+import {
+  adminContentStack,
+  adminPageIntro,
+  adminPageTitle,
+  linkInline,
+} from "../ui";
 import { DestinationsPanel, type DestinationRow } from "./destinations-panel";
 
 export default async function AdminDestinationsPage() {
@@ -25,6 +31,7 @@ export default async function AdminDestinationsPage() {
       provider: true,
       label: true,
       publicMeta: true,
+      branchKey: true,
       enabled: true,
       createdAt: true,
       updatedAt: true,
@@ -37,6 +44,7 @@ export default async function AdminDestinationsPage() {
     provider: d.provider,
     label: d.label,
     publicMeta: d.publicMeta,
+    branchKey: d.branchKey,
     enabled: d.enabled,
     createdAt: d.createdAt.toISOString(),
     updatedAt: d.updatedAt.toISOString(),
@@ -44,17 +52,15 @@ export default async function AdminDestinationsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-        Destinations
-      </h1>
-      <p className="mt-2 text-zinc-600 dark:text-zinc-400">
+      <h1 className={adminPageTitle}>Destinations</h1>
+      <p className={adminPageIntro}>
         <strong className="font-medium text-zinc-800 dark:text-zinc-200">
           Slack
         </strong>{" "}
         uses{" "}
         <a
           href="https://api.slack.com/messaging/webhooks"
-          className="text-blue-600 underline dark:text-blue-400"
+          className={linkInline}
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -67,7 +73,7 @@ export default async function AdminDestinationsPage() {
         uses a bot token and channel ID (
         <a
           href="https://discord.com/developers/docs/resources/channel#create-message"
-          className="text-blue-600 underline dark:text-blue-400"
+          className={linkInline}
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -80,7 +86,7 @@ export default async function AdminDestinationsPage() {
         uses a bot token from{" "}
         <a
           href="https://t.me/BotFather"
-          className="text-blue-600 underline dark:text-blue-400"
+          className={linkInline}
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -89,7 +95,7 @@ export default async function AdminDestinationsPage() {
         and a{" "}
         <a
           href="https://core.telegram.org/bots/api#sendmessage"
-          className="text-blue-600 underline dark:text-blue-400"
+          className={linkInline}
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -101,7 +107,7 @@ export default async function AdminDestinationsPage() {
         </code>
         .
       </p>
-      <div className="mt-8">
+      <div className={adminContentStack}>
         <DestinationsPanel
           workspaces={workspaces}
           initialDestinations={initialDestinations}

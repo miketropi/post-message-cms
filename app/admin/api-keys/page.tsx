@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 
+import { adminContentStack, adminPageIntro, adminPageTitle, linkInline } from "../ui";
 import { ApiKeysPanel, type ApiKeyRow } from "./api-keys-panel";
 
 export default async function AdminApiKeysPage() {
@@ -43,28 +44,23 @@ export default async function AdminApiKeysPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-        API keys
-      </h1>
-      <p className="mt-2 text-zinc-600 dark:text-zinc-400">
+      <h1 className={adminPageTitle}>API keys</h1>
+      <p className={adminPageIntro}>
         Use keys with{" "}
-        <code className="rounded bg-zinc-200 px-1 py-0.5 text-sm dark:bg-zinc-800">
+        <code className="rounded-md bg-zinc-100 px-1.5 py-0.5 font-mono text-xs dark:bg-zinc-800">
           POST /api/v1/messages
         </code>{" "}
         (Bearer or{" "}
-        <code className="rounded bg-zinc-200 px-1 py-0.5 text-sm dark:bg-zinc-800">
+        <code className="rounded-md bg-zinc-100 px-1.5 py-0.5 font-mono text-xs dark:bg-zinc-800">
           X-Api-Key
         </code>
         ). Add a destination (Slack, Discord, or Telegram) under{" "}
-        <Link
-          href="/admin/destinations"
-          className="text-blue-600 underline dark:text-blue-400"
-        >
+        <Link href="/admin/destinations" className={linkInline}>
           Destinations
         </Link>{" "}
         for the same workspace.
       </p>
-      <div className="mt-8">
+      <div className={adminContentStack}>
         <ApiKeysPanel workspaces={workspaces} initialKeys={initialKeys} />
       </div>
     </div>

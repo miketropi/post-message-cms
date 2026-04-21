@@ -7,6 +7,10 @@ import {
   hashApiKey,
 } from "@/lib/api-keys";
 import { dispatchIncomingMessage } from "@/lib/messages/dispatch";
+import {
+  assertValidRequestBranch,
+  parseIncomingMessageBody,
+} from "@/lib/messages/routing";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -42,6 +46,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Expected JSON body." }, { status: 400 });
   }
 
+  const parsed = parseIncomingMessageBody(body);
+  const branchFromQuery =
+    new URL(request.url).searchParams.get("branch") ?? undefined;
+  let branch: string | undefined;
+  try {
+    branch = assertValidRequestBranch(parsed.branch ?? branchFromQuery);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Invalid branch.";
+    return NextResponse.json({ error: msg }, { status: 400 });
+  }
+
   await prisma.apiKey.update({
     where: { id: apiKey.id },
     data: { lastUsedAt: new Date() },
@@ -49,21 +64,27 @@ export async function POST(request: Request) {
 
   const idempotencyKey = request.headers.get("idempotency-key") ?? undefined;
 
-  const deliveries = await dispatchIncomingMessage(apiKey.workspaceId, body);
+  const deliveries = await dispatchIncomingMessage(
+    apiKey.workspaceId,
+    parsed.bodyForText,
+    { branch },
+  );
   const hadTargets = deliveries.length > 0;
   const anyOk = deliveries.some((d) => d.ok);
 
   const payload = {
     ok: !hadTargets || anyOk,
     workspaceId: apiKey.workspaceId,
+    branch: branch ?? null,
     received: body,
     deliveries,
     idempotencyKey,
     ...(hadTargets
       ? {}
       : {
-          notice:
-            "No enabled destinations for this workspace. Add Slack, Discord, or Telegram under Admin → Destinations.",
+          notice: branch
+            ? `No enabled destinations for branch "${branch}". Add a destination with this branch key under Admin → Destinations, or omit branch to use default destinations.`
+            : "No enabled destinations for this workspace. Add Slack, Discord, or Telegram under Admin → Destinations.",
         }),
   };
 
