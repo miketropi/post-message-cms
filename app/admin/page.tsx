@@ -21,7 +21,7 @@ export default function AdminHomePage() {
             href="/admin/destinations"
             className="underline-offset-2 hover:underline"
           >
-            Slack destinations (Incoming Webhooks)
+            Destinations (Slack, Discord, Telegram)
           </Link>
         </li>
       </ul>

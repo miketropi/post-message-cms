@@ -55,7 +55,7 @@ export default async function AdminApiKeysPage() {
         <code className="rounded bg-zinc-200 px-1 py-0.5 text-sm dark:bg-zinc-800">
           X-Api-Key
         </code>
-        ). Add a Slack webhook under{" "}
+        ). Add a destination (Slack, Discord, or Telegram) under{" "}
         <Link
           href="/admin/destinations"
           className="text-blue-600 underline dark:text-blue-400"

@@ -48,7 +48,10 @@ export default async function AdminDestinationsPage() {
         Destinations
       </h1>
       <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-        Slack messages are sent with{" "}
+        <strong className="font-medium text-zinc-800 dark:text-zinc-200">
+          Slack
+        </strong>{" "}
+        uses{" "}
         <a
           href="https://api.slack.com/messaging/webhooks"
           className="text-blue-600 underline dark:text-blue-400"
@@ -57,9 +60,44 @@ export default async function AdminDestinationsPage() {
         >
           Incoming Webhooks
         </a>
-        . Use the same workspace as your API key when posting to{" "}
+        .{" "}
+        <strong className="font-medium text-zinc-800 dark:text-zinc-200">
+          Discord
+        </strong>{" "}
+        uses a bot token and channel ID (
+        <a
+          href="https://discord.com/developers/docs/resources/channel#create-message"
+          className="text-blue-600 underline dark:text-blue-400"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Create Message
+        </a>
+        ).{" "}
+        <strong className="font-medium text-zinc-800 dark:text-zinc-200">
+          Telegram
+        </strong>{" "}
+        uses a bot token from{" "}
+        <a
+          href="https://t.me/BotFather"
+          className="text-blue-600 underline dark:text-blue-400"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          @BotFather
+        </a>{" "}
+        and a{" "}
+        <a
+          href="https://core.telegram.org/bots/api#sendmessage"
+          className="text-blue-600 underline dark:text-blue-400"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          chat_id
+        </a>{" "}
+        (numeric or @channel). Use the same workspace as your API key for{" "}
         <code className="rounded bg-zinc-200 px-1 py-0.5 text-sm dark:bg-zinc-800">
-          /api/v1/messages
+          POST /api/v1/messages
         </code>
         .
       </p>

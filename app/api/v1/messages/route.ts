@@ -63,7 +63,7 @@ export async function POST(request: Request) {
       ? {}
       : {
           notice:
-            "No enabled Slack destinations for this workspace. Add one under Admin → Destinations.",
+            "No enabled destinations for this workspace. Add Slack, Discord, or Telegram under Admin → Destinations.",
         }),
   };
 

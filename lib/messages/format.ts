@@ -1,7 +1,7 @@
 /**
- * Map API JSON to a single Slack `text` string (mrkdwn-friendly plain text).
+ * Map API JSON to plain text for chat APIs (Slack, Discord, Telegram).
  */
-export function jsonBodyToSlackText(body: unknown): string {
+export function jsonBodyToPlainText(body: unknown): string {
   if (body === null || body === undefined) {
     return "";
   }
@@ -12,7 +12,7 @@ export function jsonBodyToSlackText(body: unknown): string {
     return String(body);
   }
   if (Array.isArray(body)) {
-    return body.map((x) => jsonBodyToSlackText(x)).join("\n");
+    return body.map((x) => jsonBodyToPlainText(x)).join("\n");
   }
   if (typeof body === "object") {
     const o = body as Record<string, unknown>;
