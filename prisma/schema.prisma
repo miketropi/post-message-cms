@@ -9,7 +9,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "mysql"
 }
 
 enum MessageStatus {
@@ -30,7 +30,7 @@ model User {
   passwordHash        String
   firstName           String?
   lastName            String?
-  bio                 String?
+  bio                 String?              @db.Text
   workspaces          Workspace[]
   passwordResetTokens PasswordResetToken[]
   createdAt           DateTime             @default(now())
@@ -74,7 +74,7 @@ model Destination {
   provider        String
   label           String
   /// AES-256-GCM ciphertext (iv.ciphertext.tag, base64url), decrypt with server secret
-  secretEncrypted String
+  secretEncrypted String @db.Text
   /// Non-sensitive hint for admin lists (e.g. hooks.slack.com)
   publicMeta      String?
   /// Optional slug: API callers pass `branch` to deliver only here (omit = default destinations).
@@ -114,8 +114,8 @@ model Message {
   apiKeyId       String
   apiKey         ApiKey        @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
   branch         String?
-  rawBody        String
-  text           String
+  rawBody        String        @db.Text
+  text           String        @db.Text
   idempotencyKey String?
   status         MessageStatus
   createdAt      DateTime      @default(now())
@@ -136,7 +136,7 @@ model Delivery {
   provider      String
   status        DeliveryStatus
   httpStatus    Int?
-  error         String?
+  error         String?        @db.Text
   duration      Int?
   attempt       Int            @default(1)
   createdAt     DateTime       @default(now())

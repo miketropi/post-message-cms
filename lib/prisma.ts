@@ -1,25 +1,21 @@
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PrismaClient } from "@/app/generated/prisma/client";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-function sqlitePathFromDatabaseUrl(url: string): string {
-  if (url.startsWith("file:")) {
-    return url.slice("file:".length);
-  }
-  return url;
-}
-
 function createPrismaClient(): PrismaClient {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is not set");
   }
-  const adapter = new PrismaBetterSqlite3({
-    url: sqlitePathFromDatabaseUrl(databaseUrl),
-  });
+  if (databaseUrl.startsWith("file:")) {
+    throw new Error(
+      "DATABASE_URL points to SQLite (file:…). Set a MySQL URL, e.g. mysql://USER:PASSWORD@HOST:3306/DATABASE",
+    );
+  }
+  const adapter = new PrismaMariaDb(databaseUrl);
   return new PrismaClient({ adapter });
 }
 

@@ -15,10 +15,12 @@ The same **`POST /api/v1/messages`** integration delivers to **default** destina
 
 Deeper product and architecture notes live in **[PROJECT.md](./PROJECT.md)**.
 
+**Switching from an older SQLite checkout:** pull the new migrations, point `DATABASE_URL` at MySQL, run `npx prisma migrate deploy` (or `migrate dev`). SQLite `file:…` URLs are no longer supported—export data yourself if you need to move rows from an old `dev.db`.
+
 ## Stack
 
 - **Next.js** (App Router), **React**, **TypeScript**, **Tailwind CSS**
-- **Prisma ORM 7** + **SQLite** locally (`DATABASE_URL` file); schema is intended to move to **MySQL** later with the same migration workflow
+- **Prisma ORM 7** + **MySQL 8+** (`DATABASE_URL` connection string; **utf8mb4**)
 - **Admin auth**: email/password, JWT session cookie (`AUTH_SECRET`)
 - **Public API**: API keys (`messages:write`) scoped to a **workspace**
 - **Secrets**: Webhook URLs and bot credentials stored **encrypted at rest** (key derived from `AUTH_SECRET`)
@@ -27,14 +29,14 @@ Deeper product and architecture notes live in **[PROJECT.md](./PROJECT.md)**.
 ## Prerequisites
 
 - **Node.js** (LTS recommended)
-- A toolchain that can build **native addons** (for `better-sqlite3`), e.g. Xcode Command Line Tools on macOS
+- **MySQL 8+** (or compatible server) reachable from the app, with an empty database created for this project (`utf8mb4` / `utf8mb4_unicode_ci` recommended)
 
 ## Quick start
 
 ```bash
 npm install
 cp .env.example .env
-# Edit .env: set AUTH_SECRET (min 32 characters), e.g. openssl rand -base64 32
+# Edit .env: set DATABASE_URL (MySQL), AUTH_SECRET (min 32 characters), e.g. openssl rand -base64 32
 npx prisma migrate dev
 npm run dev
 ```
@@ -130,7 +132,7 @@ Or include `"branch":"alerts"` in the JSON body (body wins if both are set). The
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DATABASE_URL` | Yes | SQLite file URL, e.g. `file:./prisma/dev.db`. For MySQL later, use a `mysql://` URL after changing the Prisma `provider`. |
+| `DATABASE_URL` | Yes | MySQL connection URL, e.g. `mysql://USER:PASSWORD@HOST:3306/DATABASE`. Special characters in the password must be **URL-encoded**. The database must exist before `prisma migrate deploy`. |
 | `AUTH_SECRET` | Yes | At least **32 characters**. Signs admin session JWTs and derives encryption for stored destination secrets. |
 | `CRON_SECRET` | No | If set, enables **`POST /api/admin/cleanup`** via `Authorization: Bearer <CRON_SECRET>` (no browser session). Generate a long random value (e.g. `openssl rand -base64 32`). |
 
@@ -320,7 +322,7 @@ curl -sS -X POST "https://your-host.example.com/api/admin/cleanup" \
 
 - Set `DATABASE_URL`, `AUTH_SECRET`, and run **`npx prisma migrate deploy`** (or `npm run db:deploy`) before `npm run start`.
 - `postinstall` runs **`prisma generate`**; the generated client is written under `app/generated/prisma` (see `.gitignore`).
-- Use a **Node** runtime for routes that use Prisma and the SQLite adapter (not Edge).
+- Use a **Node** runtime for routes that use Prisma (not Edge).
 - **Message retention in production** is not automatic; see [Scheduled cleanup (you configure this)](#scheduled-cleanup-you-configure-this).
 
 ## License

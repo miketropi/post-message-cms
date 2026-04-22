@@ -4,7 +4,7 @@
 
 This repository is a **message bridge / notification CMS**: operators configure **destinations** (where messages go) and—optionally—**branches** (named routes). Developers call **`POST /api/v1/messages`** with an API key; the app fans out to every matching destination. Product goals: **low friction for operators**, **stable HTTP API for integrators**, and **secrets only on the server** (encrypted at rest where stored in the DB).
 
-**Prisma** + **SQLite** in development; the schema is designed so **MySQL** can replace SQLite via datasource config and migrations later.
+**Prisma** + **MySQL 8+** in development and production (`DATABASE_URL` `mysql://…`).
 
 **Authoritative architecture notes for automation:** this file. **Operator quickstart and curl examples:** [README.md](./README.md). **Cursor/IDE note:** [AGENTS.md](./AGENTS.md) links here.
 
@@ -75,16 +75,16 @@ When implementing, prefer: explicit config over hidden defaults, validate extern
 | Layer | Choice | Notes |
 |-------|--------|--------|
 | Framework | **Next.js** (App Router) | RSC for admin; Route Handlers for APIs |
-| ORM / DB | **Prisma 7** + **SQLite** | `prisma/schema.prisma`; **MySQL** later: switch `datasource` + `DATABASE_URL` |
-| Prisma client | `lib/prisma.ts` | **Driver adapter** `@prisma/adapter-better-sqlite3`; **production** uses `globalThis` singleton; **development** recreates client to avoid stale model delegates after `migrate`/`generate` |
+| ORM / DB | **Prisma 7** + **MySQL 8+** | `prisma/schema.prisma`; `DATABASE_URL` must be a `mysql://` URL |
+| Prisma client | `lib/prisma.ts` | **Driver adapter** `@prisma/adapter-mariadb` (MySQL-compatible); **production** uses `globalThis` singleton; **development** recreates client to avoid stale model delegates after `migrate`/`generate` |
 | Output | `app/generated/prisma` | Created by `prisma generate` (`postinstall` / `build`); gitignored under `app/generated` |
 | Config | `prisma.config.ts` + `.env` | `DATABASE_URL`; CLI loads via dotenv in config |
 | Auth (browser) | **jose** HS256 in HttpOnly cookie | `AUTH_SECRET` (min 32 chars) |
 | Auth (API) | API key | Hash lookup on `ApiKey` |
 
-### SQLite → MySQL (constraint)
+### MySQL notes
 
-- Portable Prisma types; no SQLite-only `.$queryRaw` without MySQL testing.
+- Use **utf8mb4** for the database so JSON and Unicode in message text behave as expected.
 - Rotating `AUTH_SECRET` **breaks** decryption of `secretEncrypted` for destinations—operators must re-save or re-add connections.
 
 ### Environment (agent checklist)
@@ -161,7 +161,7 @@ AGENTS.md
 
 - An admin can add at least one destination and receive traffic from **`POST /api/v1/messages`**.
 - A developer can integrate with **one** HTTP contract (same payload; optional `branch`).
-- **MySQL** cutover is primarily **Prisma datasource + migrations + data migration** for SQLite files, not a rewrite of business logic.
+- The app targets **MySQL** via Prisma; local/prod both use the same `mysql://` migration workflow.
 
 ---
 
