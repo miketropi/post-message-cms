@@ -7,14 +7,24 @@ import {
   parseDiscordSecretJson,
 } from "@/lib/providers/discord/secret";
 import { postSlackIncomingWebhook } from "@/lib/providers/slack/incoming-webhook";
+import { postGoogleChatIncomingWebhook } from "@/lib/providers/google-chat/incoming-webhook";
+import { postTeamsIncomingWebhook } from "@/lib/providers/teams/incoming-webhook";
+import {
+  parseSmtpMailSecretJson,
+} from "@/lib/providers/smtp/secret";
 import { postTelegramSendMessage } from "@/lib/providers/telegram/send-message";
 import {
   type TelegramStoredSecret,
   parseTelegramSecretJson,
 } from "@/lib/providers/telegram/secret";
+import type { SmtpMailStoredSecret } from "@/lib/providers/smtp/types";
+import { sendSmtpDestMail } from "@/lib/providers/smtp/send-destination-mail";
 import {
   PROVIDER_DISCORD_BOT,
+  PROVIDER_GOOGLE_CHAT_INCOMING_WEBHOOK,
   PROVIDER_SLACK_INCOMING_WEBHOOK,
+  PROVIDER_SMTP_MAIL,
+  PROVIDER_TEAMS_INCOMING_WEBHOOK,
   PROVIDER_TELEGRAM_BOT,
 } from "@/lib/providers/types";
 import { prisma } from "@/lib/prisma";
@@ -103,6 +113,50 @@ export async function deliverPlainTextToDestination(
   if (d.provider === PROVIDER_SLACK_INCOMING_WEBHOOK) {
     const start = Date.now();
     const sent = await postSlackIncomingWebhook(decrypted, text);
+    const ms = Date.now() - start;
+    return {
+      v1: {
+        ...baseV1,
+        ok: sent.ok,
+        error: sent.ok ? undefined : sent.error,
+      },
+      log: {
+        destinationId: d.id,
+        provider: d.provider,
+        status: sent.ok ? DeliveryStatus.SUCCESS : DeliveryStatus.FAILED,
+        httpStatus: sent.httpStatus,
+        error: sent.ok ? null : sent.error,
+        duration: ms,
+        attempt: attemptNo,
+      },
+    };
+  }
+
+  if (d.provider === PROVIDER_TEAMS_INCOMING_WEBHOOK) {
+    const start = Date.now();
+    const sent = await postTeamsIncomingWebhook(decrypted, text);
+    const ms = Date.now() - start;
+    return {
+      v1: {
+        ...baseV1,
+        ok: sent.ok,
+        error: sent.ok ? undefined : sent.error,
+      },
+      log: {
+        destinationId: d.id,
+        provider: d.provider,
+        status: sent.ok ? DeliveryStatus.SUCCESS : DeliveryStatus.FAILED,
+        httpStatus: sent.httpStatus,
+        error: sent.ok ? null : sent.error,
+        duration: ms,
+        attempt: attemptNo,
+      },
+    };
+  }
+
+  if (d.provider === PROVIDER_GOOGLE_CHAT_INCOMING_WEBHOOK) {
+    const start = Date.now();
+    const sent = await postGoogleChatIncomingWebhook(decrypted, text);
     const ms = Date.now() - start;
     return {
       v1: {
@@ -216,6 +270,60 @@ export async function deliverPlainTextToDestination(
     };
   }
 
+  if (d.provider === PROVIDER_SMTP_MAIL) {
+    let creds: SmtpMailStoredSecret;
+    try {
+      creds = parseSmtpMailSecretJson(decrypted);
+    } catch (e) {
+      const err = e instanceof Error ? e.message : "Invalid stored SMTP destination.";
+      return {
+        v1: {
+          ...baseV1,
+          ok: false,
+          error: err,
+        },
+        log: {
+          destinationId: d.id,
+          provider: d.provider,
+          status: DeliveryStatus.FAILED,
+          httpStatus: null,
+          error: err,
+          duration: duration(),
+          attempt: attemptNo,
+        },
+      };
+    }
+    const start = Date.now();
+    const bodyText = `The following message was posted to your workspace.
+
+---
+
+${text}
+
+— Post Message CMS`;
+    const sent = await sendSmtpDestMail(creds, {
+      subject: `Post Message CMS: ${d.label}`,
+      text: bodyText,
+    });
+    const ms = Date.now() - start;
+    return {
+      v1: {
+        ...baseV1,
+        ok: sent.ok,
+        error: sent.ok ? undefined : sent.error,
+      },
+      log: {
+        destinationId: d.id,
+        provider: d.provider,
+        status: sent.ok ? DeliveryStatus.SUCCESS : DeliveryStatus.FAILED,
+        httpStatus: sent.httpStatus,
+        error: sent.ok ? null : sent.error,
+        duration: ms,
+        attempt: attemptNo,
+      },
+    };
+  }
+
   return {
     v1: {
       ...baseV1,
@@ -252,8 +360,11 @@ export async function dispatchIncomingMessage(
       provider: {
         in: [
           PROVIDER_SLACK_INCOMING_WEBHOOK,
+          PROVIDER_TEAMS_INCOMING_WEBHOOK,
+          PROVIDER_GOOGLE_CHAT_INCOMING_WEBHOOK,
           PROVIDER_DISCORD_BOT,
           PROVIDER_TELEGRAM_BOT,
+          PROVIDER_SMTP_MAIL,
         ],
       },
     },

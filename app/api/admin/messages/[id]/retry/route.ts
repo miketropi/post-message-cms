@@ -6,7 +6,10 @@ import type { DeliveryResult } from "@/lib/messages/dispatch";
 import { requireUserSession, userOwnsWorkspace } from "@/lib/admin-api";
 import {
   PROVIDER_DISCORD_BOT,
+  PROVIDER_GOOGLE_CHAT_INCOMING_WEBHOOK,
   PROVIDER_SLACK_INCOMING_WEBHOOK,
+  PROVIDER_SMTP_MAIL,
+  PROVIDER_TEAMS_INCOMING_WEBHOOK,
   PROVIDER_TELEGRAM_BOT,
 } from "@/lib/providers/types";
 import { prisma } from "@/lib/prisma";
@@ -69,8 +72,11 @@ export async function POST(_request: Request, context: RouteContext) {
       provider: {
         in: [
           PROVIDER_SLACK_INCOMING_WEBHOOK,
+          PROVIDER_TEAMS_INCOMING_WEBHOOK,
+          PROVIDER_GOOGLE_CHAT_INCOMING_WEBHOOK,
           PROVIDER_DISCORD_BOT,
           PROVIDER_TELEGRAM_BOT,
+          PROVIDER_SMTP_MAIL,
         ],
       },
     },

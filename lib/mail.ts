@@ -11,24 +11,17 @@ export function isSmtpConfigured(): boolean {
   return Boolean(env("SMTP_HOST") && env("SMTP_FROM"));
 }
 
-export async function sendPasswordChangedNotice(to: string): Promise<{
-  sent: boolean;
-  skipped: boolean;
-  error?: string;
-}> {
+function createSmtpTransporter(): nodemailer.Transporter | null {
   if (!isSmtpConfigured()) {
-    return { sent: false, skipped: true };
+    return null;
   }
-
   const host = env("SMTP_HOST")!;
   const port = Number(env("SMTP_PORT") ?? "587");
   const secure =
     env("SMTP_SECURE") === "true" || env("SMTP_SECURE") === "1" || port === 465;
   const user = env("SMTP_USER");
   const pass = env("SMTP_PASS");
-  const from = env("SMTP_FROM")!;
-
-  const transporter = nodemailer.createTransport({
+  return nodemailer.createTransport({
     host,
     port,
     secure,
@@ -40,6 +33,19 @@ export async function sendPasswordChangedNotice(to: string): Promise<{
           }
         : undefined,
   });
+}
+
+export async function sendPasswordChangedNotice(to: string): Promise<{
+  sent: boolean;
+  skipped: boolean;
+  error?: string;
+}> {
+  if (!isSmtpConfigured()) {
+    return { sent: false, skipped: true };
+  }
+
+  const transporter = createSmtpTransporter()!;
+  const from = env("SMTP_FROM")!;
 
   const subject = "Your Post Message CMS password was changed";
   const text = [
@@ -80,26 +86,8 @@ export async function sendPasswordResetEmail(
     return { sent: false, skipped: true };
   }
 
-  const host = env("SMTP_HOST")!;
-  const port = Number(env("SMTP_PORT") ?? "587");
-  const secure =
-    env("SMTP_SECURE") === "true" || env("SMTP_SECURE") === "1" || port === 465;
-  const user = env("SMTP_USER");
-  const pass = env("SMTP_PASS");
+  const transporter = createSmtpTransporter()!;
   const from = env("SMTP_FROM")!;
-
-  const transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    auth:
-      user && pass
-        ? {
-            user,
-            pass,
-          }
-        : undefined,
-  });
 
   const subject = "Reset your Post Message CMS password";
   const text = [

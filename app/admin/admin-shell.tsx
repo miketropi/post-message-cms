@@ -36,7 +36,7 @@ const navItems = [
   {
     href: "/admin/destinations",
     label: "Destinations",
-    caption: "Slack, Discord, and Telegram targets.",
+    caption: "Slack, Discord, Telegram & more",
     icon: Share2,
     match: (path: string) =>
       path === "/admin/destinations" ||

@@ -9,7 +9,11 @@ import {
   Hash,
   Loader2,
   Lock,
+  Mail,
   MapPin,
+  MessageCircle,
+  MessageSquare,
+  Pencil,
   Radio,
   Send,
   Trash2,
@@ -20,14 +24,16 @@ import { useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
 import {
   PROVIDER_DISCORD_BOT,
+  PROVIDER_GOOGLE_CHAT_INCOMING_WEBHOOK,
   PROVIDER_SLACK_INCOMING_WEBHOOK,
+  PROVIDER_SMTP_MAIL,
+  PROVIDER_TEAMS_INCOMING_WEBHOOK,
   PROVIDER_TELEGRAM_BOT,
 } from "@/lib/providers/types";
 
 import {
   alertError,
   bodyText,
-  btnDangerGhost,
   btnPrimary,
   calloutBox,
   cardSection,
@@ -39,6 +45,7 @@ import {
   sectionIntro,
   sectionTitle,
 } from "../ui";
+import { DestinationEditForm } from "./destination-edit-form";
 
 type WorkspaceOption = { id: string; name: string };
 
@@ -54,7 +61,13 @@ export type DestinationRow = {
   updatedAt: string;
 };
 
-type ProviderChoice = "slack" | "discord" | "telegram";
+type ProviderChoice =
+  | "slack"
+  | "teams"
+  | "googleChat"
+  | "discord"
+  | "telegram"
+  | "smtp";
 
 type WizardStepId = "provider" | "workspace" | "basics" | "credentials";
 
@@ -68,6 +81,18 @@ const PROVIDER_UI: Record<
     hint: "Webhook URL from your Slack app.",
     Icon: Hash,
   },
+  teams: {
+    title: "Microsoft Teams",
+    subtitle: "Incoming Webhook",
+    hint: "Channel webhook or Power Automate URL.",
+    Icon: MessageSquare,
+  },
+  googleChat: {
+    title: "Google Chat",
+    subtitle: "Incoming Webhook",
+    hint: "Space webhook URL (chat.googleapis.com).",
+    Icon: MessageCircle,
+  },
   discord: {
     title: "Discord",
     subtitle: "Bot message",
@@ -79,6 +104,12 @@ const PROVIDER_UI: Record<
     subtitle: "Bot API",
     hint: "Bot token and chat_id.",
     Icon: Send,
+  },
+  smtp: {
+    title: "SMTP",
+    subtitle: "Email",
+    hint: "Your own mail server and addresses.",
+    Icon: Mail,
   },
 };
 
@@ -101,6 +132,12 @@ function formatProviderName(provider: string): string {
       return "Discord";
     case PROVIDER_TELEGRAM_BOT:
       return "Telegram";
+    case PROVIDER_SMTP_MAIL:
+      return "SMTP";
+    case PROVIDER_TEAMS_INCOMING_WEBHOOK:
+      return "Teams";
+    case PROVIDER_GOOGLE_CHAT_INCOMING_WEBHOOK:
+      return "Google Chat";
     default:
       return provider;
   }
@@ -121,11 +158,19 @@ export function DestinationsPanel({
   const [botToken, setBotToken] = useState("");
   const [discordChannelId, setDiscordChannelId] = useState("");
   const [telegramChatId, setTelegramChatId] = useState("");
+  const [smtpHost, setSmtpHost] = useState("");
+  const [smtpPort, setSmtpPort] = useState("587");
+  const [smtpSecure, setSmtpSecure] = useState(false);
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpPass, setSmtpPass] = useState("");
+  const [smtpFrom, setSmtpFrom] = useState("");
+  const [smtpTo, setSmtpTo] = useState("");
   const [branchKey, setBranchKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [wizardStepIndex, setWizardStepIndex] = useState(0);
   const [stepError, setStepError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const stepSequence = useMemo((): WizardStepId[] => {
     const s: WizardStepId[] = ["provider"];
@@ -164,10 +209,27 @@ export function DestinationsPanel({
   }
 
   function credentialsFilled(): boolean {
-    if (providerKind === "slack") return webhookUrl.trim().length > 0;
+    if (
+      providerKind === "slack" ||
+      providerKind === "teams" ||
+      providerKind === "googleChat"
+    ) {
+      return webhookUrl.trim().length > 0;
+    }
     if (providerKind === "discord") {
       return (
         botToken.trim().length > 0 && discordChannelId.trim().length > 0
+      );
+    }
+    if (providerKind === "smtp") {
+      const p = parseInt(smtpPort.trim() || "0", 10);
+      return (
+        smtpHost.trim().length > 0 &&
+        Number.isFinite(p) &&
+        p >= 1 &&
+        p <= 65535 &&
+        smtpFrom.trim().length > 0 &&
+        smtpTo.trim().length > 0
       );
     }
     return botToken.trim().length > 0 && telegramChatId.trim().length > 0;
@@ -186,24 +248,46 @@ export function DestinationsPanel({
       let provider: string;
       if (providerKind === "slack") {
         provider = PROVIDER_SLACK_INCOMING_WEBHOOK;
+      } else if (providerKind === "teams") {
+        provider = PROVIDER_TEAMS_INCOMING_WEBHOOK;
+      } else if (providerKind === "googleChat") {
+        provider = PROVIDER_GOOGLE_CHAT_INCOMING_WEBHOOK;
       } else if (providerKind === "discord") {
         provider = PROVIDER_DISCORD_BOT;
+      } else if (providerKind === "smtp") {
+        provider = PROVIDER_SMTP_MAIL;
       } else {
         provider = PROVIDER_TELEGRAM_BOT;
       }
 
-      const payload: Record<string, string | undefined> = {
+      const payload: Record<string, string | number | boolean | undefined> = {
         workspaceId: workspaceId || undefined,
         label: label.trim(),
         provider,
         branchKey: branchKey.trim() || undefined,
       };
 
-      if (providerKind === "slack") {
+      if (
+        providerKind === "slack" ||
+        providerKind === "teams" ||
+        providerKind === "googleChat"
+      ) {
         payload.webhookUrl = webhookUrl.trim();
       } else if (providerKind === "discord") {
         payload.botToken = botToken.trim();
         payload.channelId = discordChannelId.trim();
+      } else if (providerKind === "smtp") {
+        payload.smtpHost = smtpHost.trim();
+        payload.smtpPort = parseInt(smtpPort.trim() || "587", 10);
+        payload.smtpSecure = smtpSecure;
+        if (smtpUser.trim()) {
+          payload.smtpUser = smtpUser.trim();
+        }
+        if (smtpPass) {
+          payload.smtpPass = smtpPass;
+        }
+        payload.smtpFrom = smtpFrom.trim();
+        payload.toEmail = smtpTo.trim();
       } else {
         payload.botToken = botToken.trim();
         payload.chatId = telegramChatId.trim();
@@ -224,6 +308,13 @@ export function DestinationsPanel({
       setBotToken("");
       setDiscordChannelId("");
       setTelegramChatId("");
+      setSmtpHost("");
+      setSmtpPort("587");
+      setSmtpSecure(false);
+      setSmtpUser("");
+      setSmtpPass("");
+      setSmtpFrom("");
+      setSmtpTo("");
       setBranchKey("");
       setWizardStepIndex(0);
       router.refresh();
@@ -243,6 +334,7 @@ export function DestinationsPanel({
       setError(data.error ?? "Could not remove destination.");
       return;
     }
+    setEditingId((cur) => (cur === id ? null : cur));
     router.refresh();
   }
 
@@ -307,8 +399,8 @@ export function DestinationsPanel({
                   this page.
                 </p>
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                {(Object.keys(PROVIDER_UI) as ProviderChoice[]).map((key) => {
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4">
+                {(Object.keys(PROVIDER_UI) as ProviderChoice[]).map((key) => { 
                   const p = PROVIDER_UI[key];
                   const selected = providerKind === key;
                   return (
@@ -415,11 +507,15 @@ export function DestinationsPanel({
                   value={label}
                   onChange={(e) => setLabel(e.target.value)}
                   placeholder={
-                    providerKind === "slack"
+                    providerKind === "slack" ||
+                    providerKind === "teams" ||
+                    providerKind === "googleChat"
                       ? "e.g. #alerts"
                       : providerKind === "discord"
                         ? "e.g. #general"
-                        : "e.g. Ops broadcast"
+                        : providerKind === "smtp"
+                          ? "e.g. On-call email"
+                          : "e.g. Ops broadcast"
                   }
                   autoComplete="off"
                   className={fieldInput}
@@ -490,6 +586,155 @@ export function DestinationsPanel({
                       className={fieldInput}
                     />
                   </label>
+                </>
+              ) : providerKind === "teams" ? (
+                <>
+                  <p className={bodyText}>
+                    In Teams, open a channel’s{" "}
+                    <strong className="font-medium text-zinc-800 dark:text-zinc-200">
+                      ···
+                    </strong>{" "}
+                    menu → <strong className="font-medium">Connectors</strong> (or
+                    use <strong className="font-medium">Power Automate</strong> /{" "}
+                    <strong className="font-medium">Workflows</strong> with “Post
+                    to a channel when…”). Copy the <code className="rounded bg-zinc-100 px-1 font-mono text-xs dark:bg-zinc-800">https</code>{" "}
+                    webhook URL.
+                  </p>
+                  <label className="flex flex-col gap-1.5 text-sm">
+                    <span className={fieldLabel}>Webhook URL</span>
+                    <input
+                      value={webhookUrl}
+                      onChange={(e) => setWebhookUrl(e.target.value)}
+                      type="url"
+                      placeholder="https://outlook.office.com/webhook/… or Power Platform URL"
+                      autoComplete="off"
+                      className={fieldInput}
+                    />
+                  </label>
+                </>
+              ) : providerKind === "googleChat" ? (
+                <>
+                  <p className={bodyText}>
+                    In Google Chat, open a <strong className="font-medium text-zinc-800 dark:text-zinc-200">space</strong> →{" "}
+                    <strong className="font-medium">Manage webhooks</strong> (or use the
+                    space menu) and add an <strong className="font-medium">Incoming webhook</strong>. The URL
+                    must look like{" "}
+                    <code className="rounded bg-zinc-100 px-1 font-mono text-xs dark:bg-zinc-800">
+                      https://chat.googleapis.com/v1/spaces/…/messages?key=…
+                    </code>
+                    . See{" "}
+                    <a
+                      href="https://developers.google.com/chat/how-tos/webhooks"
+                      className={linkInline}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Google’s webhook guide
+                    </a>
+                    .
+                  </p>
+                  <label className="flex flex-col gap-1.5 text-sm">
+                    <span className={fieldLabel}>Webhook URL</span>
+                    <input
+                      value={webhookUrl}
+                      onChange={(e) => setWebhookUrl(e.target.value)}
+                      type="url"
+                      placeholder="https://chat.googleapis.com/v1/spaces/…/messages?…"
+                      autoComplete="off"
+                      className={fieldInput}
+                    />
+                  </label>
+                </>
+              ) : providerKind === "smtp" ? (
+                <>
+                  <p className={bodyText}>
+                    This target uses its <strong>own</strong> SMTP server and
+                    credentials. They are encrypted and stored in the database
+                    only — unrelated to{" "}
+                    <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
+                      SMTP_*
+                    </code>{" "}
+                    in <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">.env</code> (those are only for
+                    account / password email from the app).
+                  </p>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="flex flex-col gap-1.5 text-sm sm:col-span-2">
+                      <span className={fieldLabel}>SMTP host</span>
+                      <input
+                        value={smtpHost}
+                        onChange={(e) => setSmtpHost(e.target.value)}
+                        autoComplete="off"
+                        placeholder="e.g. smtp.example.com"
+                        className={fieldInput}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1.5 text-sm">
+                      <span className={fieldLabel}>Port</span>
+                      <input
+                        value={smtpPort}
+                        onChange={(e) => setSmtpPort(e.target.value)}
+                        inputMode="numeric"
+                        autoComplete="off"
+                        placeholder="587"
+                        className={fieldInput}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1.5 text-sm sm:items-end">
+                      <span className={fieldLabel}>TLS / SSL</span>
+                      <label className="inline-flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+                        <input
+                          type="checkbox"
+                          checked={smtpSecure}
+                          onChange={(e) => setSmtpSecure(e.target.checked)}
+                          className="h-4 w-4 rounded border-zinc-300"
+                        />
+                        Use TLS (e.g. port 465; often off for 587 with STARTTLS)
+                      </label>
+                    </label>
+                    <label className="flex flex-col gap-1.5 text-sm sm:col-span-2">
+                      <span className={fieldLabel}>
+                        Username (optional — omit for unauthenticated relay)
+                      </span>
+                      <input
+                        value={smtpUser}
+                        onChange={(e) => setSmtpUser(e.target.value)}
+                        autoComplete="off"
+                        className={fieldInput}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1.5 text-sm sm:col-span-2">
+                      <span className={fieldLabel}>Password (optional)</span>
+                      <input
+                        value={smtpPass}
+                        onChange={(e) => setSmtpPass(e.target.value)}
+                        type="password"
+                        autoComplete="new-password"
+                        className={fieldInput}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1.5 text-sm sm:col-span-2">
+                      <span className={fieldLabel}>From (sender) email</span>
+                      <input
+                        value={smtpFrom}
+                        onChange={(e) => setSmtpFrom(e.target.value)}
+                        type="email"
+                        autoComplete="off"
+                        placeholder="notifications@example.com"
+                        className={fieldInput}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1.5 text-sm sm:col-span-2">
+                      <span className={fieldLabel}>To (recipient) email</span>
+                      <input
+                        value={smtpTo}
+                        onChange={(e) => setSmtpTo(e.target.value)}
+                        type="email"
+                        autoComplete="off"
+                        placeholder="oncall@example.com"
+                        className={fieldInput}
+                      />
+                    </label>
+                  </div>
                 </>
               ) : providerKind === "discord" ? (
                 <>
@@ -580,6 +825,7 @@ export function DestinationsPanel({
                 </>
               )}
 
+
               <p className={cn(calloutBox, "!mt-0")}>
                 After saving, use <strong className="font-medium">Test send</strong>{" "}
                 on the row below to verify without affecting other channels.
@@ -632,8 +878,10 @@ export function DestinationsPanel({
       <section className={cardSection}>
         <h2 className={sectionTitle}>Configured destinations</h2>
         <p className={sectionIntro}>
-          Each target receives API messages according to its branch key. Use
-          test send to verify credentials without touching other destinations.
+          Each target receives API messages according to its branch key.{" "}
+          <strong className="font-medium text-zinc-800 dark:text-zinc-200">Edit</strong> to
+          change label, branch, enabled state, or connection details. Test send
+          to verify one destination in isolation.
         </p>
         {initialDestinations.length === 0 ? (
           <div className={cn("mt-5", emptyStateDashed)}>
@@ -680,19 +928,59 @@ export function DestinationsPanel({
                     </p>
                     <DestinationTestSend destinationId={d.id} />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => remove(d.id)}
-                    className={btnDangerGhost}
-                  >
-                    <Trash2 className="h-4 w-4" aria-hidden />
-                    Remove
-                  </button>
+                  <div className="shrink-0 sm:pt-0.5">
+                    <div
+                      className="inline-flex overflow-hidden rounded-xl border border-zinc-200/90 bg-white shadow-sm dark:border-zinc-600 dark:bg-zinc-900"
+                      role="group"
+                      aria-label={`Actions for ${d.label}`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingId((cur) => (cur === d.id ? null : d.id))
+                        }
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                        title="Edit label, branch, or credentials"
+                      >
+                        <Pencil
+                          className="h-3.5 w-3.5 shrink-0 text-zinc-500 dark:text-zinc-400"
+                          aria-hidden
+                        />
+                        Edit
+                      </button>
+                      <div
+                        className="w-px shrink-0 self-stretch bg-zinc-200 dark:bg-zinc-600"
+                        aria-hidden
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void remove(d.id)}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                        title="Remove this destination"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                        Remove
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </li>
             ))}
           </ul>
         )}
+        {editingId ? (
+          <DestinationEditForm
+            destinationId={editingId}
+            summaryLabel={
+              initialDestinations.find((x) => x.id === editingId)?.label
+            }
+            onCancel={() => setEditingId(null)}
+            onSaved={() => {
+              setEditingId(null);
+              router.refresh();
+            }}
+          />
+        ) : null}
       </section>
     </div>
   );
@@ -746,7 +1034,8 @@ function DestinationTestSend({ destinationId }: { destinationId: string }) {
       if (data.ok === true) {
         setFeedback({
           type: "success",
-          message: "Sent. Check your Slack, Discord, or Telegram thread.",
+          message:
+            "Sent. Check the Slack channel, Discord thread, Telegram chat, or email inbox.",
         });
       } else {
         setFeedback({

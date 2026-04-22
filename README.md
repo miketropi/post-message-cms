@@ -1,10 +1,15 @@
 # Post Message CMS
 
+![Post Message CMS Preview](https://pub-0645c3b9d3674132af6b362484df0f3c.r2.dev/PostMessageCMS/post-message-cms-preview.jpg)
+
 HTTP API and admin UI to **forward messages into chat apps**. Supported destinations today:
 
 - **Slack** — [Incoming Webhooks](https://api.slack.com/messaging/webhooks)
+- **Microsoft Teams** — [Incoming Webhook](https://learn.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/add-incoming-webhook) (or Power Automate / Workflows “post to channel” URL); see [Microsoft Teams (developer guide)](#microsoft-teams-developer-guide) below
+- **Google Chat** — [space incoming webhook](https://developers.google.com/chat/how-tos/webhooks) on `chat.googleapis.com`; see [Google Chat developer guide](#google-chat-developer-guide) below
 - **Discord** — [Create Message](https://discord.com/developers/docs/resources/channel#create-message) (bot token + channel ID)
 - **Telegram** — [sendMessage](https://core.telegram.org/bots/api#sendmessage) (bot token + `chat_id`)
+- **SMTP (email)** — plain-text message sent through a **mail server you configure on the destination** (host, port, optional auth, from, to); stored **encrypted** in the database and **not** tied to **`SMTP_*`** in `.env` (those are only for the app’s own account / password emails)
 
 The same **`POST /api/v1/messages`** integration delivers to **default** destinations (no branch key) for the API key’s workspace, or to destinations that match an optional **`branch`** (JSON body or query). Each accepted request is **logged in the database** (request body, resolved text, per-destination results) so you can debug deliveries and **retry** failures from the admin UI—without changing the public API response shape.
 
@@ -37,7 +42,7 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000).
 
 1. **Register** an admin account (creates a default workspace).
-2. **Admin → Destinations** — add **Slack**, **Discord**, and/or **Telegram** (see sections below). Use an optional **branch key** per destination to route API calls to specific channels; leave it empty for **default** destinations that receive unscoped messages.
+2. **Admin → Destinations** — add **Slack**, **Microsoft Teams**, **Google Chat**, **Discord**, **Telegram**, and/or **SMTP** (see sections below). Use an optional **branch key** per destination to route API calls to specific channels; leave it empty for **default** destinations that receive unscoped messages.
 3. **Admin → API keys** — create a key (shown once).
 4. **Send a test message** (below). Then open **Admin → Messages** to see the log, per-destination status, and **retry** if something failed.
 
@@ -60,6 +65,52 @@ curl -sS -X POST 'http://localhost:3000/api/v1/messages?branch=alerts' \
 Or include `"branch":"alerts"` in the JSON body (body wins if both are set). The `branch` field is stripped before message text is computed, so it does not appear in the chat line.
 
 **Headers:** you can use **`X-Api-Key: YOUR_API_KEY`** instead of `Authorization`. Optional: **`Idempotency-Key`** — stored on the **message log** when present; **duplicate suppression** (skip second send) is not implemented yet, so do not rely on it for safety-critical deduplication.
+
+### Microsoft Teams developer guide
+
+**What the app does:** destinations use provider string **`teams_incoming_webhook`**. The stored secret is the full **`https` webhook URL** (encrypted at rest, same pattern as Slack). On each API message, the server **`POST`s JSON** `{"text":"<plain text>"}` to that URL—the format expected by classic [Incoming Webhook](https://learn.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/add-incoming-webhook) and many **Power Platform** / **Logic Apps** endpoints that post to a channel.
+
+**Code locations:** `lib/providers/types.ts` (`PROVIDER_TEAMS_INCOMING_WEBHOOK`), URL validation in `lib/providers/teams/validate.ts`, send in `lib/providers/teams/incoming-webhook.ts`, fan-out in `lib/messages/dispatch.ts`, admin create/patch in `lib/admin/destination-from-body.ts`.
+
+**Getting a URL (operators):**
+
+1. In Teams, open the target **channel** → **···** (More options) → **Connectors** (or **Workflows** / automate from the channel, depending on your tenant).  
+2. Add **Incoming Webhook** (or create a **Power Automate** flow with **“Post to a channel”** / similar), name it, and copy the **HTTPS** URL.  
+3. The URL’s hostname should be a Microsoft-recognized host (e.g. `outlook.office.com`, a `…webhook.office.com` host, Power Platform, or Logic Apps). The admin UI and API **reject** URLs that do not look like valid Microsoft / Power Platform webhook hosts.
+
+**API create example** (same `webhookUrl` field as Slack; do **not** omit `provider` for Teams):
+
+```json
+{
+  "provider": "teams_incoming_webhook",
+  "label": "Incidents",
+  "webhookUrl": "https://outlook.office.com/webhook/...",
+  "branchKey": "incidents"
+}
+```
+
+**Curl (after you have a destination id):** test send matches other providers — `POST /api/admin/destinations/:id/test` with `{ "text": "..." }` (session auth).
+
+**Limits / behavior:** very long text may hit Microsoft’s connector limits; the app does not truncate for Teams (unlike Discord/Telegram in dispatch). If a tenant’s endpoint expects **Adaptive Cards** or a different JSON shape, delivery may **fail** until the payload format is extended—open an issue or adapt `postTeamsIncomingWebhook` for your endpoint.
+
+### Google Chat developer guide
+
+**What the app does:** provider string **`google_chat_incoming_webhook`**. The stored secret is the full **HTTPS** webhook URL from Google Chat (encrypted at rest). Each send **`POST`s JSON** `{"text":"<plain text>"}` to that URL, per [Google Chat incoming webhooks](https://developers.google.com/chat/how-tos/webhooks).
+
+**Code locations:** `lib/providers/types.ts` (`PROVIDER_GOOGLE_CHAT_INCOMING_WEBHOOK`), URL validation in `lib/providers/google-chat/validate.ts`, send in `lib/providers/google-chat/incoming-webhook.ts`, fan-out in `lib/messages/dispatch.ts`, admin create/patch in `lib/admin/destination-from-body.ts`.
+
+**Getting a URL (operators):** in a Google Chat **space**, add an **Incoming webhook** and copy the URL. It must be `https://chat.googleapis.com/v1/spaces/.../messages?...` (the app rejects other hosts or paths).
+
+**API create example:**
+
+```json
+{
+  "provider": "google_chat_incoming_webhook",
+  "label": "Builds",
+  "webhookUrl": "https://chat.googleapis.com/v1/spaces/SPACE/messages?key=KEY&token=TOKEN",
+  "branchKey": "builds"
+}
+```
 
 ### Discord setup (summary)
 
@@ -119,7 +170,7 @@ Authenticates with an API key, then delivers to enabled destinations for that ke
 - **400** — Non-JSON body.
 - **502** — At least one destination was configured and **every** delivery failed (details in `deliveries`).
 
-Length limits when sending: **Discord** truncates to **2000** characters; **Telegram** to **4096**; Slack follows Incoming Webhook limits.
+Length limits when sending: **Discord** truncates to **2000** characters; **Telegram** to **4096**; **Slack**, **Microsoft Teams**, and **Google Chat** follow each provider’s webhook / connector payload limits.
 
 ### Admin APIs (session cookie)
 
@@ -131,7 +182,8 @@ All of these require a **logged-in** admin; pass cookies from the browser or the
 | `GET` | `/api/admin/messages/:id` | Full message + deliveries (includes `rawBody`—admin only). |
 | `POST` | `/api/admin/messages/:id/retry` | Re-sends to destinations whose **latest** attempt **failed** (enabled targets only). Returns a shape similar to `POST /api/v1/messages` for the retry batch. |
 | `POST` | `/api/admin/cleanup` | Deletes old `Message` rows (and cascade `Delivery` rows) per workspace **`messageRetentionDays`**. **Session** (browser) or **`Authorization: Bearer` + `CRON_SECRET`**. See [Scheduled cleanup (you configure this)](#scheduled-cleanup-you-configure-this). |
-| `GET` / `POST` | `/api/admin/destinations` | List/create destinations (see below). |
+| `GET` / `POST` | `/api/admin/destinations` | List / create destinations (see below). |
+| `GET` / `PATCH` / `DELETE` | `/api/admin/destinations/:id` | **Get** (decrypted details for the admin form), **update** `label` / `branch` / `enabled` / connection fields, or **remove** a destination. |
 | `POST` | `/api/admin/destinations/:id/test` | Test send a string to a single destination. |
 
 ### Admin: `POST /api/admin/destinations` (create)
@@ -149,6 +201,28 @@ Session cookie required. JSON body examples:
 ```
 
 (`branchKey` optional; omit for a default destination.)
+
+**Microsoft Teams:**
+
+```json
+{
+  "provider": "teams_incoming_webhook",
+  "label": "Incidents",
+  "webhookUrl": "https://outlook.office.com/webhook/...",
+  "branchKey": "incidents"
+}
+```
+
+**Google Chat:**
+
+```json
+{
+  "provider": "google_chat_incoming_webhook",
+  "label": "Builds",
+  "webhookUrl": "https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...",
+  "branchKey": "builds"
+}
+```
 
 **Discord:**
 
@@ -175,6 +249,25 @@ Session cookie required. JSON body examples:
 ```
 
 (`chatId` may also be a public channel username such as `@mychannel`.)
+
+**SMTP (email):**
+
+```json
+{
+  "provider": "smtp_mail",
+  "label": "On-call email",
+  "smtpHost": "smtp.example.com",
+  "smtpPort": 587,
+  "smtpSecure": false,
+  "smtpUser": "mailer",
+  "smtpPass": "secret",
+  "smtpFrom": "notifications@example.com",
+  "toEmail": "oncall@example.com",
+  "branchKey": "oncall"
+}
+```
+
+Omit **`smtpUser`** / **`smtpPass`** if your server allows unauthenticated relay (rare in production). This is **independent** of **`SMTP_*`** in `.env`.
 
 ## Message log, retention, and production ops
 

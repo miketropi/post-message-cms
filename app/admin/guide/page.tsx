@@ -51,6 +51,8 @@ const sections = [
   { id: "overview", label: "For developers" },
   { id: "quick-start", label: "Quick start" },
   { id: "slack", label: "Slack" },
+  { id: "teams", label: "Microsoft Teams" },
+  { id: "google-chat", label: "Google Chat" },
   { id: "discord", label: "Discord" },
   { id: "telegram", label: "Telegram" },
   { id: "branches", label: "Branch routing" },
@@ -63,9 +65,9 @@ export default function AdminGuidePage() {
     <div className="max-w-3xl space-y-8 md:space-y-10">
       <h1 className={adminPageTitle}>Developer guide</h1>
       <p className={adminPageIntro}>
-        Hook up Slack, Discord, or Telegram once in the admin UI, then call a
-        single JSON endpoint from your app, cron jobs, or CI. No SDK required —
-        just HTTPS and an API key.
+        Hook up Slack, Microsoft Teams, Google Chat, Discord, Telegram, or SMTP
+        email once in the admin UI, then call a single JSON endpoint from your
+        app, cron jobs, or CI. No SDK required — just HTTPS and an API key.
       </p>
 
       <nav aria-label="On this page" className={tocNav}>
@@ -142,8 +144,8 @@ export default function AdminGuidePage() {
               >
                 Destinations
               </Link>
-              — add at least one Slack, Discord, or Telegram target (see
-              sections below).
+              — add at least one destination (Slack, Teams, Google Chat, Discord,
+              Telegram, or SMTP; see sections below).
             </li>
             <li>
               Create an API key under{" "}
@@ -250,6 +252,200 @@ Content-Type: application/json
               One webhook = one channel. For multiple channels, create multiple
               Slack destinations (or use branch keys to pick which webhook(s) get
               each API call).
+            </p>
+          </Callout>
+        </section>
+
+        <section id="teams" className={guideSection}>
+          <h2 className={sectionTitle}>
+            Microsoft Teams
+          </h2>
+          <p className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+            Uses an{" "}
+            <a
+              href="https://learn.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/add-incoming-webhook"
+              className={linkInline}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Incoming Webhook
+            </a>{" "}
+            (or a compatible Power Platform / Workflows URL that posts to a
+            channel). The server stores the full{" "}
+            <code className="rounded bg-zinc-100 px-1 font-mono text-xs dark:bg-zinc-800">
+              https
+            </code>{" "}
+            URL and sends each message as JSON{" "}
+            <code className="rounded bg-zinc-100 px-1 font-mono text-xs dark:bg-zinc-800">
+              {`{ "text": "…" }`}
+            </code>{" "}
+            — the same idea as Slack, with provider id{" "}
+            <code className="rounded bg-zinc-100 px-1 font-mono text-xs dark:bg-zinc-800">
+              teams_incoming_webhook
+            </code>
+            .
+          </p>
+
+          <h3 className={subsectionTitle}>
+            Configure in Teams
+          </h3>
+          <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+            <li>
+              Open the target <strong className="text-zinc-800 dark:text-zinc-200">channel</strong> →{" "}
+              <strong className="text-zinc-800 dark:text-zinc-200">···</strong> (More) →{" "}
+              <strong className="text-zinc-800 dark:text-zinc-200">Connectors</strong> (or use{" "}
+              <strong className="text-zinc-800 dark:text-zinc-200">Workflows</strong> / Power Automate, depending
+              on your tenant).
+            </li>
+            <li>
+              Add an <strong className="text-zinc-800 dark:text-zinc-200">Incoming Webhook</strong> (or a flow
+              with <strong className="text-zinc-800 dark:text-zinc-200">Post to a channel</strong>) and copy the
+              URL. It should be a Microsoft-recognized host (e.g.{" "}
+              <code className="rounded bg-zinc-100 px-1 font-mono text-xs dark:bg-zinc-800">
+                outlook.office.com
+              </code>
+              , a{" "}
+              <code className="rounded bg-zinc-100 px-1 font-mono text-xs dark:bg-zinc-800">
+                …webhook.office.com
+              </code>{" "}
+              name, or Power Platform / Logic Apps).
+            </li>
+          </ol>
+
+          <h3 className={subsectionTitle}>
+            Configure in this app
+          </h3>
+          <p className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+            In{" "}
+            <Link
+              href="/admin/destinations"
+              className={linkInline}
+            >
+              Destinations
+            </Link>
+            , choose <strong className="text-zinc-800 dark:text-zinc-200">Microsoft Teams — Incoming Webhook</strong>,
+            set a label, paste the URL, and optionally a branch key. Test with{" "}
+            <strong className="text-zinc-800 dark:text-zinc-200">Test send</strong> on the row.
+          </p>
+
+          <CodeBlock title="Admin API (session cookie) — create Teams destination">{`POST /api/admin/destinations
+Content-Type: application/json
+
+{
+  "provider": "teams_incoming_webhook",
+  "label": "Incidents",
+  "webhookUrl": "https://outlook.office.com/webhook/…",
+  "branchKey": "incidents"
+}`}</CodeBlock>
+          <p className="mt-2 text-xs text-zinc-500">
+            You must set{" "}
+            <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
+              provider
+            </code>{" "}
+            — it does not default to Teams. Omit{" "}
+            <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
+              branchKey
+            </code>{" "}
+            for a default destination.
+          </p>
+
+          <Callout title="If delivery fails">
+            <p>
+              Some endpoints expect Adaptive Cards or a different JSON shape. Check{" "}
+              <code className="rounded bg-zinc-900/20 px-1 font-mono text-xs dark:bg-zinc-100/20">
+                deliveries[].error
+              </code>{" "}
+              in the API response or <strong className="text-zinc-800 dark:text-zinc-200">Admin → Messages</strong>.
+              Very long text may be rejected by Microsoft&apos;s connector limits.
+            </p>
+          </Callout>
+        </section>
+
+        <section id="google-chat" className={guideSection}>
+          <h2 className={sectionTitle}>
+            Google Chat
+          </h2>
+          <p className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+            Uses a Google Chat <strong className="text-zinc-800 dark:text-zinc-200">space incoming webhook</strong> URL
+            on{" "}
+            <code className="rounded bg-zinc-100 px-1 font-mono text-xs dark:bg-zinc-800">
+              chat.googleapis.com
+            </code>
+            . The server <code className="rounded bg-zinc-100 px-1 font-mono text-xs dark:bg-zinc-800">{`{ "text": "…" }`}</code>{" "}
+            payload matches{" "}
+            <a
+              href="https://developers.google.com/chat/how-tos/webhooks"
+              className={linkInline}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Google&apos;s webhook format
+            </a>
+            . Provider id is{" "}
+            <code className="rounded bg-zinc-100 px-1 font-mono text-xs dark:bg-zinc-800">
+              google_chat_incoming_webhook
+            </code>
+            .
+          </p>
+
+          <h3 className={subsectionTitle}>
+            Configure in Google Chat
+          </h3>
+          <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+            <li>
+              Open a <strong className="text-zinc-800 dark:text-zinc-200">space</strong> (or create one) where
+              messages should land.
+            </li>
+            <li>
+              Add an <strong className="text-zinc-800 dark:text-zinc-200">Incoming webhook</strong> for the space and
+              copy the URL. It should look like{" "}
+              <code className="rounded bg-zinc-100 px-1 font-mono text-xs dark:bg-zinc-800">
+                https://chat.googleapis.com/v1/spaces/…/messages?key=…&amp;token=…
+              </code>
+              .
+            </li>
+          </ol>
+
+          <h3 className={subsectionTitle}>
+            Configure in this app
+          </h3>
+          <p className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+            In{" "}
+            <Link href="/admin/destinations" className={linkInline}>
+              Destinations
+            </Link>
+            , choose <strong className="text-zinc-800 dark:text-zinc-200">Google Chat — Incoming Webhook</strong>,
+            paste the URL, label, and optional branch. Use <strong className="text-zinc-800 dark:text-zinc-200">Test send</strong> to verify.
+          </p>
+
+          <CodeBlock title="Admin API (session cookie) — create Google Chat destination">{`POST /api/admin/destinations
+Content-Type: application/json
+
+{
+  "provider": "google_chat_incoming_webhook",
+  "label": "Builds",
+  "webhookUrl": "https://chat.googleapis.com/v1/spaces/…/messages?key=…&token=…",
+  "branchKey": "builds"
+}`}</CodeBlock>
+          <p className="mt-2 text-xs text-zinc-500">
+            Set{" "}
+            <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
+              provider
+            </code>{" "}
+            explicitly; it does not default to Google Chat.
+          </p>
+
+          <Callout title="Troubleshooting">
+            <p>
+              400 errors often mean invalid JSON for that endpoint. Check{" "}
+              <code className="rounded bg-zinc-900/20 px-1 font-mono text-xs dark:bg-zinc-100/20">
+                deliveries[].error
+              </code>{" "}
+              or the destination test response. The URL must stay under{" "}
+              <code className="rounded bg-zinc-900/20 px-1 font-mono text-xs dark:bg-zinc-100/20">
+                chat.googleapis.com
+              </code>{" "}
+              with a <code className="rounded bg-zinc-900/20 px-1 font-mono text-xs dark:bg-zinc-100/20">/spaces/…/messages</code> path.
             </p>
           </Callout>
         </section>
@@ -574,7 +770,8 @@ Content-Type: application/json
             <li>
               Text length: Discord{" "}
               <strong className="text-zinc-800 dark:text-zinc-200">2000</strong>, Telegram{" "}
-              <strong className="text-zinc-800 dark:text-zinc-200">4096</strong>; Slack follows webhook limits.
+              <strong className="text-zinc-800 dark:text-zinc-200">4096</strong>; Slack, Microsoft Teams, and Google Chat
+              follow each provider&apos;s webhook limits (this app does not truncate those webhook providers).
             </li>
           </ul>
           <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">

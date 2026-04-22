@@ -21,7 +21,10 @@ import { getRequestBaseUrl } from "@/lib/request-base-url";
 import { cn } from "@/lib/cn";
 import {
   PROVIDER_DISCORD_BOT,
+  PROVIDER_GOOGLE_CHAT_INCOMING_WEBHOOK,
   PROVIDER_SLACK_INCOMING_WEBHOOK,
+  PROVIDER_SMTP_MAIL,
+  PROVIDER_TEAMS_INCOMING_WEBHOOK,
   PROVIDER_TELEGRAM_BOT,
 } from "@/lib/providers/types";
 
@@ -33,6 +36,12 @@ function providerLabel(provider: string): string {
       return "Discord";
     case PROVIDER_TELEGRAM_BOT:
       return "Telegram";
+    case PROVIDER_SMTP_MAIL:
+      return "SMTP";
+    case PROVIDER_TEAMS_INCOMING_WEBHOOK:
+      return "Teams";
+    case PROVIDER_GOOGLE_CHAT_INCOMING_WEBHOOK:
+      return "Google Chat";
     default:
       return provider;
   }

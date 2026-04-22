@@ -102,7 +102,12 @@ export default async function AdminDestinationsPage() {
         >
           chat_id
         </a>
-        ). Match the workspace your API key uses for{" "}
+        ), or{" "}
+        <strong className="font-medium text-zinc-800 dark:text-zinc-200">
+          SMTP
+        </strong>{" "}
+        (email with <strong className="font-medium">per-destination</strong>{" "}
+        server and sender). Match the workspace your API key uses for{" "}
         <code className="rounded bg-zinc-200 px-1 py-0.5 text-sm dark:bg-zinc-800">
           POST /api/v1/messages
         </code>
