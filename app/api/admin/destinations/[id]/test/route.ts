@@ -53,7 +53,7 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
 
-  const result = await deliverPlainTextToDestination(
+  const { v1: result } = await deliverPlainTextToDestination(
     {
       id: dest.id,
       provider: dest.provider,

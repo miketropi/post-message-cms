@@ -12,6 +12,18 @@ datasource db {
   provider = "sqlite"
 }
 
+enum MessageStatus {
+  SUCCESS
+  PARTIAL
+  FAILED
+  NO_MATCH
+}
+
+enum DeliveryStatus {
+  SUCCESS
+  FAILED
+}
+
 model User {
   id                  String               @id @default(cuid())
   email               String               @unique
@@ -38,14 +50,17 @@ model PasswordResetToken {
 
 /// Tenant boundary for admins, connections, and destinations (expand in later migrations).
 model Workspace {
-  id           String        @id @default(cuid())
-  name         String
-  userId       String
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  apiKeys      ApiKey[]
-  destinations Destination[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id                   String        @id @default(cuid())
+  name                 String
+  userId               String
+  user                 User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiKeys              ApiKey[]
+  destinations         Destination[]
+  messages             Message[]
+  /// How long to keep `Message` + `Delivery` rows (days)
+  messageRetentionDays Int           @default(30)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 
   @@index([userId])
 }
@@ -70,6 +85,7 @@ model Destination {
 
   @@index([workspaceId])
   @@index([workspaceId, branchKey])
+  deliveries Delivery[]
 }
 
 /// Programmatic access; raw key is shown only once at creation.
@@ -85,6 +101,45 @@ model ApiKey {
   scopes      Json      @default("[\"messages:write\"]")
   createdAt   DateTime  @default(now())
   lastUsedAt  DateTime?
+  messages    Message[]
 
   @@index([workspaceId])
+}
+
+/// Inbound API message log + per-destination results.
+model Message {
+  id             String        @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  apiKeyId       String
+  apiKey         ApiKey        @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  branch         String?
+  rawBody        String
+  text           String
+  idempotencyKey String?
+  status         MessageStatus
+  createdAt      DateTime      @default(now())
+  deliveries     Delivery[]
+
+  @@index([workspaceId, createdAt])
+  @@index([idempotencyKey])
+}
+
+/// One row per send attempt to a destination for a message.
+model Delivery {
+  id            String         @id @default(cuid())
+  messageId     String
+  message       Message        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  destinationId String
+  destination   Destination     @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  /// Same value as `Destination.provider` (e.g. slack_incoming_webhook)
+  provider      String
+  status        DeliveryStatus
+  httpStatus    Int?
+  error         String?
+  duration      Int?
+  attempt       Int            @default(1)
+  createdAt     DateTime       @default(now())
+
+  @@index([messageId])
 }

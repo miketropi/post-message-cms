@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   BookOpen,
+  Inbox,
   KeyRound,
   LayoutDashboard,
   Menu,
@@ -40,6 +41,14 @@ const navItems = [
     match: (path: string) =>
       path === "/admin/destinations" ||
       path.startsWith("/admin/destinations/"),
+  },
+  {
+    href: "/admin/messages",
+    label: "Messages",
+    caption: "Inbound log, deliveries, and retry.",
+    icon: Inbox,
+    match: (path: string) =>
+      path === "/admin/messages" || path.startsWith("/admin/messages/"),
   },
   {
     href: "/admin/guide",

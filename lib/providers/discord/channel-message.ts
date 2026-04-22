@@ -10,7 +10,9 @@ export async function postDiscordChannelMessage(
   botToken: string,
   channelId: string,
   content: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; httpStatus: number } | { ok: false; error: string; httpStatus: number | null }
+> {
   const trimmed =
     content.length > MAX_CONTENT_LENGTH
       ? `${content.slice(0, MAX_CONTENT_LENGTH - 3)}...`
@@ -43,12 +45,13 @@ export async function postDiscordChannelMessage(
       }
       return {
         ok: false,
+        httpStatus: res.status,
         error: `Discord HTTP ${res.status}: ${detail}`,
       };
     }
-    return { ok: true };
+    return { ok: true, httpStatus: res.status };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: msg };
+    return { ok: false, httpStatus: null, error: msg };
   }
 }

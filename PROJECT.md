@@ -2,56 +2,71 @@
 
 ## Purpose (for agents)
 
-This repository is a **message bridge / notification CMS**: admins configure **destinations** (Slack, Discord, Telegram) and **rules** for how incoming API traffic becomes outbound chat messages. The product goal is **low friction for operators** and **predictable, documented APIs for developers**. Persistence uses **Prisma** with **SQLite** initially and **MySQL** for later hosted scale, without rewriting domain logic.
+This repository is a **message bridge / notification CMS**: operators configure **destinations** (where messages go) and—optionally—**branches** (named routes). Developers call **`POST /api/v1/messages`** with an API key; the app fans out to every matching destination. Product goals: **low friction for operators**, **stable HTTP API for integrators**, and **secrets only on the server** (encrypted at rest where stored in the DB).
 
-When implementing, prefer: clear admin UX, explicit configuration over magic defaults, idempotent webhooks where possible, and secrets stored server-side only.
+**Prisma** + **SQLite** in development; the schema is designed so **MySQL** can replace SQLite via datasource config and migrations later.
 
----
+**Authoritative architecture notes for automation:** this file. **Operator quickstart and curl examples:** [README.md](./README.md). **Cursor/IDE note:** [AGENTS.md](./AGENTS.md) links here.
 
-## Product summary
-
-- **What it is**: A Next.js application that exposes HTTP APIs (and an admin UI) to **register**, **authenticate admins**, **connect third-party chat providers**, and **forward or fan out messages** to those channels.
-- **Who it’s for**:
-  - **Developers**: simple API keys or signed requests, stable payloads, webhooks for delivery status if needed later.
-  - **End users / operators**: guided setup (OAuth or bot tokens per provider), test sends, and visibility into recent deliveries.
-- **Differentiators**: easy configuration, flexible routing (one API call → many destinations), provider abstraction so new channels can be added without changing caller integrations.
+When implementing, prefer: explicit config over hidden defaults, validate external input, and keep **provider code** in `lib/providers/{slack,discord,telegram}/` behind a small dispatch layer (`lib/messages/dispatch.ts`).
 
 ---
 
-## Core concepts
+## What is implemented (snapshot)
+
+| Area | Status |
+|------|--------|
+| **Admin auth** | Register, login, logout; JWT session cookie (`AUTH_SECRET`); **forgot/reset password** (tokens in DB + email when SMTP is configured) |
+| **User profile** | `User.firstName`, `lastName`, `bio`; **Account** admin page; **Gravatar** for avatar in shell |
+| **Workspaces** | One default workspace on register; all API keys and destinations are workspace-scoped |
+| **API keys** | `ApiKey` with `messages:write`; list masked; **POST `/api/v1/messages`** uses `Authorization: Bearer` or `X-Api-Key` |
+| **Destinations** | `Destination` per workspace: **Slack** (`slack_incoming_webhook`, Incoming Webhook URL), **Discord** (`discord_bot`, bot + channel), **Telegram** (`telegram_bot`, bot + `chat_id`); `secretEncrypted` (AES-256-GCM, key from `AUTH_SECRET`); `publicMeta` for display |
+| **Branch routing** | Optional `Destination.branchKey` (slug). API callers set **`branch`** in JSON and/or `?branch=` query; `lib/messages/routing.ts` strips routing keys before text formatting. If `branch` is omitted, only destinations with **`branchKey: null`** (default) receive the message. See `assertValidRequestBranch` / `BRANCH_KEY_PATTERN` |
+| **Dispatch** | `dispatchIncomingMessage(workspaceId, body, { branch })` → `deliverPlainTextToDestination` per row; `jsonBodyToPlainText` in `lib/messages/format.ts` |
+| **Admin test send** | **POST** `/api/admin/destinations/[id]/test` with `{ "text": "..." }` (session auth) reuses `deliverPlainTextToDestination` |
+| **Admin UI** | `AdminShell` (sidebar, mobile nav, Lucide): Dashboard, **API keys**, **Destinations**, **Developer guide** (`/admin/guide`); **Account** in user menu |
+| **Email** | Optional **Nodemailer** (`lib/mail.ts`): if `SMTP_HOST` + `SMTP_FROM` are set, password-reset and related emails send; otherwise flows may skip or degrade gracefully (check call sites) |
+| **Health** | `GET /api/health` |
+
+**Not** implemented as durable **outbound job** rows (no `OutboundJob` model yet); delivery results are **returned in the API response** only. Idempotency header is **echoed** but not fully enforced for duplicate suppression.
+
+---
+
+## Product summary (unchanged intent)
+
+- **What it is**: Next.js app with an admin UI and JSON APIs to connect chat providers and **forward** or **fan out** messages.
+- **Developers**: API keys, versioned `POST /api/v1/messages`, optional branch routing.
+- **Operators**: Web UI to create keys, add destinations (Slack / Discord / Telegram), optional `branchKey`, and a developer guide.
+
+---
+
+## Core concepts (data model)
 
 | Concept | Meaning |
-|--------|---------|
-| **Admin** | Authenticated user who owns workspaces, API credentials, and provider connections. |
-| **Workspace / Project** | Optional tenant boundary; all resources belong to one admin or workspace. |
-| **Provider connection** | Authorized link to Slack (workspace/app), Discord (bot + guild/channel), or Telegram (bot). |
-| **Destination** | A concrete target: e.g. Slack `#alerts`, Discord channel ID, Telegram chat ID. |
-| **Message template** | Optional mapping from API JSON to provider-specific text, blocks, embeds, or parse modes. |
-| **Outbound job** | Record of a send attempt: payload snapshot, provider, status, error, timestamps. |
+|--------|--------|
+| **User** | Admin account. Fields include `email`, `passwordHash`, optional `firstName`, `lastName`, `bio`. |
+| **Password reset** | `PasswordResetToken`: hashed token, `expiresAt`, ties to `User`. |
+| **Workspace** | Tenant boundary: `name`, `userId`, owns `ApiKey`s and `Destination`s. |
+| **ApiKey** | Programmatic auth: `keyHash` (sha256 of raw key), `publicLabel`, `scopes` JSON (default `messages:write`). |
+| **Destination** | One outbound target: `provider` string, `label`, `secretEncrypted`, optional `publicMeta`, optional **`branchKey`**, `enabled`. |
+| **Default vs branch** | Destinations with **`branchKey: null`** receive traffic when the API does **not** specify a `branch`. Destinations with a set `branchKey` only receive traffic when the request’s **`branch`** matches ( body `branch` and/or `?branch=`). |
+| **Message template (future)** | `PROJECT` originally described templates; current code uses a shared **plain-text** mapping for all providers. |
 
-Agents should treat **provider adapters** as the main extension point: normalize “outbound message” internally, map per provider at the edge.
+**Provider string constants** live in `lib/providers/types.ts`: `PROVIDER_SLACK_INCOMING_WEBHOOK`, `PROVIDER_DISCORD_BOT`, `PROVIDER_TELEGRAM_BOT`.
 
 ---
 
-## Integrations (initial scope)
+## Integrations (implemented vs future)
 
-### Slack
+| Provider | Transport in code | Secret shape |
+|----------|-------------------|--------------|
+| **Slack** | Incoming Webhook `POST` URL | Encrypted single URL string |
+| **Discord** | Bot REST `POST /channels/{id}/messages` | Encrypted JSON `botToken` + `channelId` |
+| **Telegram** | Bot `POST .../sendMessage` | Encrypted JSON `botToken` + `chatId` |
 
-- Typical patterns: **Incoming Webhooks** (simplest), **Slack app** with `chat.postMessage` (more control).
-- Store: bot token or webhook URL **encrypted at rest**; never return full secrets to the client after save.
-- UX: “Add to Slack” OAuth flow is ideal long-term; document manual token entry if OAuth is phased.
+**Future** (per original vision): Slack OAuth / `chat.postMessage`, message templates, idempotent dedupe, background workers, webhooks for delivery receipts.
 
-### Discord
-
-- **Bot token** + **application ID**; post via REST (`/channels/{id}/messages`).
-- Validate channel/guild IDs; rate limits apply—queue or backoff in the worker layer.
-
-### Telegram
-
-- **Bot token** from BotFather; `sendMessage` / `sendPhoto` etc. as needed.
-- Chat IDs may be negative for groups; document how operators obtain them (e.g. `getUpdates` in dev).
-
-**Shared requirement**: each provider module implements the same internal interface, e.g. `send({ destinationRef, content, metadata }) -> Result`.
+**Shared pattern**: add a provider constant, implement send in `lib/providers/<name>/`, extend `deliverPlainTextToDestination` and the Prisma `findMany` `provider in [...]` list in `dispatchIncomingMessage` if a new `Destination.provider` is introduced.
 
 ---
 
@@ -59,113 +74,99 @@ Agents should treat **provider adapters** as the main extension point: normalize
 
 | Layer | Choice | Notes |
 |-------|--------|--------|
-| Framework | **Next.js** (App Router) | Server Components for admin UI; Route Handlers or Server Actions for API and OAuth callbacks. |
-| Database | **Prisma + SQLite** (dev/small deploy) | Single `schema.prisma`; access via generated Prisma Client (singleton in server code). |
-| Database (later) | **MySQL** | Same Prisma schema and migrations workflow; swap `provider` + `DATABASE_URL`—see below. |
-| Auth | Session + credentials or OAuth for admins | HttpOnly cookies for web; API keys with scopes for programmatic access. |
-| Background work | Optional queue / cron | For retries and rate limits; start in-process, extract to a worker later if needed. |
+| Framework | **Next.js** (App Router) | RSC for admin; Route Handlers for APIs |
+| ORM / DB | **Prisma 7** + **SQLite** | `prisma/schema.prisma`; **MySQL** later: switch `datasource` + `DATABASE_URL` |
+| Prisma client | `lib/prisma.ts` | **Driver adapter** `@prisma/adapter-better-sqlite3`; **production** uses `globalThis` singleton; **development** recreates client to avoid stale model delegates after `migrate`/`generate` |
+| Output | `app/generated/prisma` | Created by `prisma generate` (`postinstall` / `build`); gitignored under `app/generated` |
+| Config | `prisma.config.ts` + `.env` | `DATABASE_URL`; CLI loads via dotenv in config |
+| Auth (browser) | **jose** HS256 in HttpOnly cookie | `AUTH_SECRET` (min 32 chars) |
+| Auth (API) | API key | Hash lookup on `ApiKey` |
 
-### Prisma conventions (agents)
+### SQLite → MySQL (constraint)
 
-- **Schema**: `prisma/schema.prisma` — models, relations, indexes; no duplicate “shadow” types outside Prisma unless needed for API DTOs.
-- **Migrations**: `prisma migrate dev` locally; `prisma migrate deploy` in CI/production. Never hand-edit applied migration SQL without team agreement.
-- **Client**: one shared import (e.g. `lib/db.ts` or `lib/prisma.ts`) that avoids instantiating multiple clients in dev hot-reload (classic `globalThis` singleton pattern for Next.js).
-- **Runtime**: use **Node.js** runtime for code that calls Prisma (not Edge), unless using Prisma Accelerate/Data Proxy with an Edge-compatible entry—default this project to Node for simplicity.
-- **SQLite at runtime (Prisma ORM 7+)**: the generated client expects a **driver adapter**. This app uses `@prisma/adapter-better-sqlite3` + `better-sqlite3`; build `PrismaClient` with that adapter and a filesystem path from `DATABASE_URL` (strip the `file:` prefix). The CLI (`migrate`, `studio`) still reads `DATABASE_URL` via `prisma.config.ts`.
+- Portable Prisma types; no SQLite-only `.$queryRaw` without MySQL testing.
+- Rotating `AUTH_SECRET` **breaks** decryption of `secretEncrypted` for destinations—operators must re-save or re-add connections.
 
-### SQLite → MySQL upgrade path (non-negotiable design constraint)
+### Environment (agent checklist)
 
-Goal: moving to MySQL is a **datasource + deployment** change, not an application rewrite.
-
-- **Prisma provider switch**: in `schema.prisma`, change `provider` from `"sqlite"` to `"mysql"` (or `"postgresql"` if you pivot—this project standardizes on **MySQL** for the hosted phase).
-- **`DATABASE_URL`**: environment-only; SQLite uses a file URL (e.g. `file:./dev.db`); MySQL uses a standard server URL with credentials and database name.
-- **Schema portability**: prefer Prisma types that map cleanly on both sides (`String`, `DateTime`, `Int`, `Boolean`, `Json` where appropriate). Avoid SQLite-only raw SQL in `.$queryRaw` unless gated and tested on MySQL.
-- **Migrations**: generate and apply migrations against SQLite first; before cutover, run the same migration history against a **MySQL** database in staging. Resolve any provider-specific drift early (e.g. string length limits, JSON indexing).
-- **Data move**: SQLite → MySQL is not automatic; document a one-time **export/import** (script or off-the-shelf ETL) for early adopters. Prisma does not replace a bulk data migration strategy.
-- **CI**: optionally run `prisma migrate deploy` against MySQL in a job to catch migration issues before production.
+- **Required:** `DATABASE_URL`, `AUTH_SECRET` (see `.env.example`).
+- **Optional email:** `SMTP_HOST`, `SMTP_FROM`, and related vars for password and notification mail.
 
 ---
 
-## API surface (intended)
+## API surface (as built)
 
-Document publicly in `README` or OpenAPI once stable. Conceptual endpoints:
+| Endpoint | Auth | Role |
+|----------|------|------|
+| `POST /api/v1/messages` | API key | Fan-out to destinations for key’s workspace; optional **`branch`** in body or query; response includes `deliveries`, `branch` |
+| `GET /api/health` | None | Liveness + DB check |
+| `GET/POST /api/admin/*` | Session cookie | CRUD for keys/destinations; see route tree under `app/api/admin/` |
+| `POST /api/admin/destinations/:id/test` | Session | Test message to a single destination |
 
-- **Admin auth**: register, login, logout, session refresh, password reset (if email added later).
-- **API keys**: create, list (masked), revoke; scope: `messages:write`, `destinations:read`, etc.
-- **Providers**: create/update connection, test connection, list destinations (where the API allows).
-- **Messages**: `POST /api/v1/messages` (or versioned route) with JSON body; optional `X-Api-Key` or Bearer token.
-- **Webhooks (future)**: inbound events from providers or delivery receipts.
+**Developer-facing narrative** and examples: **`/admin/guide`** and [README.md](./README.md).
 
-**Idempotency**: accept optional `Idempotency-Key` header for `POST /messages` to avoid duplicate posts on retries.
-
----
-
-## Admin UI (intended)
-
-- Dashboard: connection health, recent deliveries, error rate.
-- Wizards: add Slack / Discord / Telegram with copy-paste fields or OAuth.
-- Message tester: send a sample payload to a chosen destination.
-- Settings: API keys, workspace name, danger zone (delete data).
+**Idempotency:** `Idempotency-Key` may be echoed in responses; treat **full** deduplication as future work.
 
 ---
 
-## Security and compliance
+## Admin UI (as built)
 
-- Encrypt provider tokens at rest; rotate keys; audit log for connection changes.
-- Validate and size-limit JSON bodies; sanitize content where providers interpret HTML/Markdown.
-- Rate limit public API per API key and per IP.
-- Principle of least privilege for OAuth scopes and bot permissions.
+- **Shell**: `app/admin/admin-shell.tsx` — responsive sidebar, `lucide-react`, user block with **Account** and Gravatar.
+- **Routes**: `/admin` (dashboard), `/admin/api-keys`, `/admin/destinations`, `/admin/guide`, `/admin/account` (and related client forms).
+- **Auth pages** (not under `/admin` matcher): `login`, `register`, `forgot-password`, `reset-password`.
+
+`middleware.ts` only protects **`/admin/*`** (session required).
 
 ---
 
-## Repository layout (suggested for greenfield)
+## Security notes
 
-Agents may create this structure as implementation proceeds:
+- **Encrypt** destination secrets; never return full secrets after create.
+- **Hash** API keys; only show raw key once at creation.
+- **Password reset** tokens stored hashed; expiry enforced in server actions.
+- **Rate limits / IP allowlists**: not built into core yet—add at edge or middleware if required.
+
+---
+
+## Repository layout (important paths)
 
 ```
-app/                 # Next.js App Router: admin UI + route handlers
-prisma/
-  schema.prisma      # Prisma schema (source of truth for DB shape)
-  migrations/        # Generated by prisma migrate
+app/
+  admin/                 # AdminShell, pages (dashboard, api-keys, destinations, guide, account)
+  api/                   # v1/messages, health, admin/*
+  register|login|forgot-password|reset-password
 lib/
-  prisma.ts          # Prisma Client singleton (or lib/db.ts)
-  auth/              # Sessions, API key verification
-  providers/         # slack/, discord/, telegram/ adapters + shared types
-  messages/          # Validation, templating, enqueue/dispatch
+  prisma.ts
+  auth/                  # session, jwt, password, actions, password reset tokens/actions, profile
+  api-keys.ts
+  admin-api.ts
+  secrets.ts             # encrypt/decrypt for destination payload strings
+  mail.ts
+  gravatar.ts
+  cn.ts
+  messages/              # dispatch.ts, format.ts, routing.ts
+  providers/             # types.ts; slack/, discord/, telegram/
+prisma/
+  schema.prisma
+  migrations/
+prisma.config.ts
+PROJECT.md
+README.md
+AGENTS.md
 ```
 
-Keep **provider-specific code** isolated; shared types live in `lib/messages` or `lib/providers/types`. Domain types that mirror persistence should align with Prisma models or thin mappers next to route handlers.
-
 ---
 
-## Implementation phases (agent checklist)
+## Success criteria (product)
 
-1. **Bootstrap**: Next.js, lint/format, env schema, **Prisma + SQLite** (`prisma init`, first migration), Prisma Client singleton, health check route (optional DB ping).
-2. **Admin auth**: registration/login, session middleware, protected admin layout.
-3. **API keys**: issuance and verification middleware for `POST /api/v1/messages`.
-4. **Provider connections**: models + CRUD + encrypted storage; “test message” path per provider.
-5. **Dispatch pipeline**: persist outbound job, call adapter, record result, basic retry.
-6. **Admin UI**: connections, destinations, tester, recent jobs.
-7. **Docs**: OpenAPI or markdown for integrators; operator runbook for each chat app.
-8. **MySQL readiness**: staging DB with `provider = "mysql"`, `prisma migrate deploy`, fix any schema/migration drift; document SQLite → MySQL data migration for existing installs.
-
----
-
-## Out of scope (unless explicitly requested)
-
-- Multi-region HA, full observability stack, mobile apps, end-user chat inside this product, or replacing native Slack/Discord/Telegram clients.
+- An admin can add at least one destination and receive traffic from **`POST /api/v1/messages`**.
+- A developer can integrate with **one** HTTP contract (same payload; optional `branch`).
+- **MySQL** cutover is primarily **Prisma datasource + migrations + data migration** for SQLite files, not a rewrite of business logic.
 
 ---
 
 ## Glossary
 
-- **Bridge**: Accept structured input over HTTP and deliver human-readable notifications to chat systems.
-- **CMS (in this name)**: Configuration and content routing system for messages—not a traditional page-based CMS.
-
----
-
-## Success criteria
-
-- An admin can connect at least one provider and receive a test message within minutes.
-- A developer can send one HTTP request with an API key and see the message in the configured channel.
-- Switching the database from SQLite to MySQL is a **Prisma provider + `DATABASE_URL` + migration deploy** change, plus a documented **data migration** for existing SQLite files—not an application rewrite.
+- **Bridge**: HTTP in → chat APIs out.
+- **CMS (name)**: Configuration for message *routing*—not a page CMS.
+- **Branch**: Named slice of destinations, selected by API `branch` to avoid sending every message to every channel.

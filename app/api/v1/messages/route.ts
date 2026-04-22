@@ -6,11 +6,16 @@ import {
   hasApiKeyScope,
   hashApiKey,
 } from "@/lib/api-keys";
-import { dispatchIncomingMessage } from "@/lib/messages/dispatch";
+import {
+  dispatchIncomingMessage,
+  resolveOutgoingPlainText,
+} from "@/lib/messages/dispatch";
 import {
   assertValidRequestBranch,
   parseIncomingMessageBody,
 } from "@/lib/messages/routing";
+import { safeJsonStringifyForStorage } from "@/lib/messages/serialize-raw";
+import { tryPersistMessageLog } from "@/lib/messages/persist-message-log";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -64,13 +69,29 @@ export async function POST(request: Request) {
 
   const idempotencyKey = request.headers.get("idempotency-key") ?? undefined;
 
-  const deliveries = await dispatchIncomingMessage(
+  const { v1: deliveries, logs: deliveryLogs } = await dispatchIncomingMessage(
     apiKey.workspaceId,
     parsed.bodyForText,
     { branch },
   );
   const hadTargets = deliveries.length > 0;
   const anyOk = deliveries.some((d) => d.ok);
+
+  try {
+    const rawBody = safeJsonStringifyForStorage(body);
+    const text = resolveOutgoingPlainText(parsed.bodyForText);
+    void tryPersistMessageLog({
+      workspaceId: apiKey.workspaceId,
+      apiKeyId: apiKey.id,
+      branch: branch ?? null,
+      idempotencyKey: idempotencyKey ?? null,
+      rawBody,
+      text,
+      deliveries: deliveryLogs,
+    });
+  } catch (err) {
+    console.error("[message-log] Unexpected error preparing log:", err);
+  }
 
   const payload = {
     ok: !hadTargets || anyOk,
