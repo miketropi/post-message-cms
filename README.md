@@ -2,6 +2,8 @@
 
 ![Post Message CMS Preview](https://pub-0645c3b9d3674132af6b362484df0f3c.r2.dev/PostMessageCMS/post-message-cms-preview.jpg)
 
+[Live demo](https://post-message-cms.beplus-agency.cloud)
+
 HTTP API and admin UI to **forward messages into chat apps**. Supported destinations today:
 
 - **Slack** — [Incoming Webhooks](https://api.slack.com/messaging/webhooks)
